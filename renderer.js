@@ -35,7 +35,7 @@ let ais = [];
 
 // Persistent "+" button that opens a plain shell terminal (use Gitsidian
 // instead of Terminal.app). Lives at the end of the tab strip.
-const newTermBtn = el('button', { class: 'new-tab', title: 'New terminal (shell, in your home folder)', text: '＋' });
+const newTermBtn = el('button', { class: 'new-tab', title: 'New terminal (shell, in your home folder)', text: '+' });
 newTermBtn.addEventListener('click', () => openSession(undefined, 'terminal', 'shell'));
 
 // Lightweight non-blocking toast for occasional notices (e.g. session cap).
@@ -99,7 +99,7 @@ async function loadAis(selectId) {
     aiSelect.appendChild(el('option', { value: ai.id }, ai.name));
   }
   // Escape hatch for anything not auto-detected (model variants, new tools).
-  aiSelect.appendChild(el('option', { value: '__add__' }, '➕ Add a command…'));
+  aiSelect.appendChild(el('option', { value: '__add__' }, '+ Add a command…'));
 
   const prefer = (selectId && installed.find((a) => a.id === selectId))
     || installed.find((a) => a.id !== 'shell' && !a.custom)
@@ -486,7 +486,6 @@ function treeNode(entry, depth, changes) {
     const item = el('div', { class: 'tree-item' });
     const row = el('div', { class: `tree-row dir${cc}`, style: `padding-left:${pad}px`, title: entry.path },
       el('span', { class: 'twisty', text: '▶' }),
-      el('span', { class: 'folder-icon', text: '📁' }),
       el('span', { class: 'tree-name', text: entry.name }),
       runHereButton(entry.path, entry.name)
     );
@@ -981,13 +980,13 @@ async function openSync(p) {
 
   if (!info.hasOrigin) { disablePush('This repo has no GitHub remote — publish it first.'); return; }
   if (info.viewerPermission && !info.canPush) {
-    disablePush(`🚫 You only have <b>read</b> access to <b>${info.nameWithOwner || 'this repo'}</b>, so pushing is disabled. You can still <b>pull</b> the latest below.`);
+    disablePush(`You only have <b>read</b> access to <b>${info.nameWithOwner || 'this repo'}</b>, so pushing is disabled. You can still <b>pull</b> the latest below.`);
     return;
   }
   if (info.visibility === 'PUBLIC') {
     syncBanner.className = 'risk-banner danger';
     const notOwner = info.isOwn ? '' : ' You are <b>not the owner</b> — only push if you are certain these changes belong here.';
-    syncBanner.innerHTML = `⚠️ <b>${info.nameWithOwner || p.name}</b> is a <b>PUBLIC</b> repository. Committing &amp; pushing makes your changes public immediately and may affect anyone using it.${notOwner}`;
+    syncBanner.innerHTML = `<b>${info.nameWithOwner || p.name}</b> is a <b>PUBLIC</b> repository. Committing &amp; pushing makes your changes public immediately and may affect anyone using it.${notOwner}`;
     syncGo.textContent = 'I understand — push to PUBLIC repo';
     syncGo.classList.add('danger');
     syncGo.disabled = false;
@@ -1202,7 +1201,7 @@ function renderAccountMenu() {
     accountMenu.appendChild(prof);
   }
   const add = el('div', { class: 'acct-item add' },
-    el('span', { class: 'acct-check', text: '＋' }), el('span', {}, 'Add account…'));
+    el('span', { class: 'acct-check', text: '+' }), el('span', {}, 'Add account…'));
   add.addEventListener('click', addAccount);
   accountMenu.appendChild(add);
   const refresh = el('div', { class: 'acct-item' },
