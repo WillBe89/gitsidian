@@ -1,0 +1,185 @@
+<!doctype html>
+<!-- Gitsidian. Authored by will.be. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';"
+    />
+    <title>Gitsidian</title>
+    <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- macOS draggable title bar -->
+    <div class="titlebar">
+      <img class="titlebar-logo" src="gitsidian3.png" alt="" />
+      <span class="titlebar-name">Gitsidian</span>
+      <div class="titlebar-spacer"></div>
+      <div id="account-chip" class="account-chip" title="Active GitHub account — click to switch">
+        <span class="gh-mark">⎇</span>
+        <span id="acct-name">…</span>
+        <span class="caret">▾</span>
+      </div>
+    </div>
+    <div id="account-menu" class="account-menu hidden"></div>
+
+    <div class="shell">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <span class="section-label">Projects</span>
+          <div class="head-btns">
+            <button id="new-group" class="icon-btn" title="New group">⊞</button>
+            <button id="refresh-vaults" class="icon-btn" title="Refresh + check git status">⟳</button>
+          </div>
+        </div>
+
+        <div class="ai-picker">
+          <label class="mini-label">New session uses</label>
+          <select id="ai-select" title="Which AI to launch in new sessions"></select>
+        </div>
+
+        <div id="vault-list" class="vault-list">
+          <div class="empty">Loading projects…</div>
+        </div>
+
+        <div class="sidebar-foot">
+          <button id="find-repos" class="block-btn primary">🔍 Find repos on this Mac</button>
+          <button id="add-folder" class="block-btn">📂 Open Folder…</button>
+          <button id="import-repo" class="block-btn">⤓ Import repo…</button>
+        </div>
+      </aside>
+
+      <!-- Main: tabs + terminals -->
+      <section class="main">
+        <div id="tabbar" class="tabbar"></div>
+        <div id="terminals" class="terminals">
+          <div id="welcome" class="welcome">
+            <img class="welcome-logo" src="gitsidian3.png" alt="" />
+            <h2>Gitsidian</h2>
+            <p>Open a project on the left, browse its files, and launch an AI session<br />
+               in any folder. Each session is its own tab — run several at once.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Import-repo modal -->
+    <div id="import-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Import a git repo as a vault</h3>
+        <label class="mini-label">Repository URL</label>
+        <input id="import-url" type="text" placeholder="https://github.com/owner/repo.git" />
+        <label class="mini-label">Folder name (optional)</label>
+        <input id="import-name" type="text" placeholder="leave blank to use repo name" />
+        <p class="hint">You'll be asked where to put it. Private repos use your existing git/gh sign-in.</p>
+        <div class="modal-actions">
+          <button id="import-cancel" class="block-btn">Cancel</button>
+          <button id="import-go" class="block-btn primary">Clone</button>
+        </div>
+        <div id="import-status" class="import-status"></div>
+      </div>
+    </div>
+
+    <!-- Add-AI (custom command) modal -->
+    <div id="addai-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Add a command</h3>
+        <p class="hint">Run any AI CLI (or any command) as a session — e.g. a model variant or a tool Gitsidian doesn't detect yet.</p>
+        <label class="mini-label">Name</label>
+        <input id="addai-name" type="text" placeholder="e.g. DeepSeek (Ollama)" />
+        <label class="mini-label">Command</label>
+        <input id="addai-cmd" type="text" placeholder="e.g. ollama run deepseek-coder" spellcheck="false" autocapitalize="off" />
+        <p class="hint">The first word must be a program on your PATH.</p>
+        <div class="modal-actions">
+          <button id="addai-cancel" class="block-btn">Cancel</button>
+          <button id="addai-go" class="block-btn primary">Add</button>
+        </div>
+        <div id="addai-status" class="import-status"></div>
+      </div>
+    </div>
+
+    <!-- Open-in-Obsidian modal -->
+    <div id="obsidian-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Open in Obsidian</h3>
+        <p class="hint" id="obs-intro"></p>
+        <div id="obs-options">
+          <label class="check-row"><input type="checkbox" id="obs-exclude" checked /> Hide build &amp; system folders (node_modules, .git, dist, build)</label>
+        </div>
+        <div class="risk-banner ok" style="margin-top:10px;">
+          This stays on your Mac — it adds the folder as an Obsidian vault and opens it. <strong>Nothing is uploaded or published online.</strong>
+        </div>
+        <div class="modal-actions">
+          <button id="obs-cancel" class="block-btn">Cancel</button>
+          <button id="obs-go" class="block-btn primary">Open in Obsidian</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Find-repos (discovery) modal -->
+    <div id="discover-modal" class="modal hidden">
+      <div class="modal-card wide">
+        <h3>Repos found on this Mac</h3>
+        <p class="hint" id="discover-intro">Scanning…</p>
+        <div class="discover-toolbar">
+          <label class="select-all"><input type="checkbox" id="discover-all" /> Select all new</label>
+          <span id="discover-count" class="discover-count"></span>
+        </div>
+        <div id="discover-list" class="discover-list"></div>
+        <div class="modal-actions">
+          <button id="discover-cancel" class="block-btn">Cancel</button>
+          <button id="discover-add" class="block-btn primary">Add selected</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sync (pull / push) modal -->
+    <div id="sync-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Sync with GitHub</h3>
+        <div id="sync-banner" class="risk-banner">Checking repository…</div>
+        <p class="hint" id="sync-repo"></p>
+        <p class="hint" id="sync-state"></p>
+        <div id="sync-push-section">
+          <label class="mini-label">Commit message</label>
+          <input id="sync-message" type="text" />
+          <div id="sync-files" class="sync-files"></div>
+        </div>
+        <div class="modal-actions">
+          <button id="sync-cancel" class="block-btn">Cancel</button>
+          <button id="sync-pull" class="block-btn hidden">⬇ Pull latest</button>
+          <button id="sync-go" class="block-btn primary" disabled>Commit &amp; Push</button>
+        </div>
+        <div id="sync-status" class="import-status"></div>
+      </div>
+    </div>
+
+    <!-- Publish-to-GitHub modal -->
+    <div id="publish-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Publish to GitHub</h3>
+        <p class="hint" id="publish-intro"></p>
+        <label class="mini-label">Repository name</label>
+        <input id="publish-name" type="text" />
+        <label class="mini-label">Visibility</label>
+        <div class="radio-row">
+          <label><input type="radio" name="vis" value="private" checked /> Private</label>
+          <label><input type="radio" name="vis" value="public" /> Public</label>
+        </div>
+        <p class="hint">Publishes as <strong id="publish-account">your GitHub account</strong>. A fresh folder gets a safe <code>.gitignore</code> and an initial commit first.</p>
+        <div class="modal-actions">
+          <button id="publish-cancel" class="block-btn">Cancel</button>
+          <button id="publish-go" class="block-btn primary">Publish</button>
+        </div>
+        <div id="publish-status" class="import-status"></div>
+      </div>
+    </div>
+
+    <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+    <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>

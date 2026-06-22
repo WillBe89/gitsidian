@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+*.dmg
+*.zip
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Obsidian local state (per-user; created if you open this repo in Obsidian)
+.obsidian/
+
+# Local env
+.env
+.env.*

@@ -1,0 +1,50 @@
+name: Release
+
+# Build macOS + Windows installers whenever a version tag is pushed,
+# and attach them to the GitHub Release for that tag.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # node-gyp (used to rebuild node-pty) needs distutils, removed in Python 3.12+.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build installer (${{ matrix.os }})
+        run: npm run dist -- --publish never
+        env:
+          # No code signing in CI for now (unsigned builds).
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Attach artifacts to the Release
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

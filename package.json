@@ -1,0 +1,90 @@
+{
+  "name": "gitsidian",
+  "version": "0.4.2",
+  "private": true,
+  "productName": "Gitsidian",
+  "description": "A friendly multi-tab cockpit for running AI coding CLIs (Claude Code, Codex, Ollama …) inside your Obsidian vaults and git repos — no Terminal required.",
+  "author": {
+    "name": "will.be",
+    "url": "https://willbe.dev"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/willbe89/gitsidian#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/willbe89/gitsidian.git"
+  },
+  "bugs": {
+    "url": "https://github.com/willbe89/gitsidian/issues"
+  },
+  "keywords": [
+    "electron",
+    "terminal",
+    "git",
+    "obsidian",
+    "claude-code",
+    "ai",
+    "developer-tools"
+  ],
+  "main": "main.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "electron .",
+    "rebuild": "electron-rebuild -f -w node-pty",
+    "postinstall": "electron-rebuild -f -w node-pty",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "pack": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "node-pty": "^1.1.0"
+  },
+  "build": {
+    "appId": "com.willbe.gitsidian",
+    "productName": "Gitsidian",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "styles.css",
+      "gitsidian3.png",
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "**/node_modules/node-pty/**"
+    ],
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "identity": null
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
