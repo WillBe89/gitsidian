@@ -171,6 +171,15 @@ let groupSeq = 0;
 let draggedPath = null;
 let draggedGroupId = null;
 
+// Always clear drag-highlight marks when a drag ends (or drops anywhere) — fixes
+// stuck red borders when a drag is cancelled or dropped on a child element.
+function clearDragMarks() {
+  document.querySelectorAll('.drag-over, .drop-before, .group-drop, .group-drop-after, .dragging, .group-dragging')
+    .forEach((e) => e.classList.remove('drag-over', 'drop-before', 'group-drop', 'group-drop-after', 'dragging', 'group-dragging'));
+}
+document.addEventListener('dragend', clearDragMarks);
+document.addEventListener('drop', clearDragMarks);
+
 function saveLayout() { window.gits.setLayout(layout); }
 
 // Reconcile saved layout against the projects that actually exist right now:
