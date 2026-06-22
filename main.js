@@ -199,7 +199,14 @@ async function gitStatus(repoPath, { fetch = false } = {}) {
   const changedCount = dirty ? dirtyRes.stdout.trim().split('\n').length : 0;
 
   let ahead = 0, behind = 0, hasUpstream = false;
-  const countRes = await git(repoPath, ['rev-list', '--left-right', '--count', '@{upstream}...HEAD']);
+  // Prefer the configured upstream; if none is set (e.g. pushed without `-u`),
+  // fall back to origin/<branch> so the repo is still recognised as "on GitHub".
+  let countRes = await git(repoPath, ['rev-list', '--left-right', '--count', '@{upstream}...HEAD']);
+  if (countRes.err) {
+    const originRef = `origin/${branch}`;
+    const exists = !(await git(repoPath, ['rev-parse', '--verify', '--quiet', originRef])).err;
+    if (exists) countRes = await git(repoPath, ['rev-list', '--left-right', '--count', `${originRef}...HEAD`]);
+  }
   if (!countRes.err && countRes.stdout.trim()) {
     const [b, a] = countRes.stdout.trim().split(/\s+/).map((n) => parseInt(n, 10) || 0);
     behind = b; ahead = a; hasUpstream = true;
@@ -549,7 +556,12 @@ ipcMain.handle('git:repoInfo', async (_e, p) => {
 // commit or clobbers local work — if it can't cleanly update, it says why.
 ipcMain.handle('git:pull', async (_e, p) => {
   const repo = expandHome(p);
-  const res = await git(repo, ['pull', '--ff-only']);
+  // Pull explicitly from origin/<branch> so it works even without upstream tracking.
+  const branch = (await git(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim() || 'HEAD';
+  let res = await git(repo, ['pull', '--ff-only', 'origin', branch]);
+  if (res.err && /couldn.t find remote ref|no such ref|does not appear/i.test(res.stderr || '')) {
+    res = await git(repo, ['pull', '--ff-only']); // fall back to default
+  }
   if (res.err) {
     const out = (res.stderr || res.stdout || '').trim();
     if (/diverg|not possible to fast-forward|would be overwritten|local changes/i.test(out)) {
@@ -574,7 +586,8 @@ ipcMain.handle('git:sync', async (_e, { path: p, message }) => {
   if (commit.err && !nothingToCommit) {
     return { ok: false, error: commit.stderr || commit.stdout || 'Commit failed.' };
   }
-  const push = await git(repo, ['push']);
+  // -u sets upstream tracking so future status/push/pull "just work".
+  const push = await git(repo, ['push', '-u', 'origin', 'HEAD']);
   if (push.err) {
     const out = push.stderr || '';
     if (/rejected|non-fast-forward|fetch first/i.test(out)) {
