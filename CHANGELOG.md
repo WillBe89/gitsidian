@@ -2,6 +2,12 @@
 
 All notable changes to Gitsidian.
 
+## 0.4.3
+
+- **Fix macOS "app is damaged" error** — the build now gets a proper ad-hoc code
+  signature, so it opens via right-click → Open instead of being blocked. (Builds
+  are still un-notarized; first launch needs the one-time Open confirmation.)
+
 ## 0.4.2
 
 - **Publish to Obsidian** — open any project in Obsidian (registers it as a vault),
