@@ -414,6 +414,33 @@ ipcMain.handle('vault:addPaths', (_e, paths) => {
   return { ok: true, count: (paths || []).length };
 });
 
+// Per-file git status for a repo, as { files: {absPath: 'new'|'modified'|'deleted'},
+// dirs: [absPaths of folders containing changes] } — for tinting the file tree.
+ipcMain.handle('git:changes', async (_e, p) => {
+  const repo = expandHome(p);
+  const empty = { files: {}, dirs: [] };
+  if (!fs.existsSync(path.join(repo, '.git'))) return empty;
+  const r = await git(repo, ['status', '--porcelain']);
+  if (r.err || !r.stdout.trim()) return empty;
+  const files = {};
+  const dirSet = new Set();
+  for (const line of r.stdout.split('\n')) {
+    if (!line.trim()) continue;
+    const code = line.slice(0, 2);
+    let rel = line.slice(3).trim();
+    if (rel.includes(' -> ')) rel = rel.split(' -> ')[1];       // renames
+    rel = rel.replace(/^"|"$/g, '');                             // quoted paths
+    const abs = path.join(repo, rel);
+    let type = 'modified';
+    if (code === '??' || code.includes('A')) type = 'new';
+    else if (code.includes('D')) type = 'deleted';
+    files[abs] = type;
+    let d = path.dirname(abs);
+    while (d.length > repo.length && d.startsWith(repo)) { dirSet.add(d); d = path.dirname(d); }
+  }
+  return { files, dirs: [...dirSet] };
+});
+
 // Immediate children of a directory, for lazy file-tree expansion.
 // Dotfiles are hidden; directories sort before files.
 ipcMain.handle('fs:list', (_e, dirPath) => {

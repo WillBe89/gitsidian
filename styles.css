@@ -257,6 +257,20 @@ body.plat-mac .titlebar { padding-left: 80px; } /* clear the macOS traffic light
 .tree-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
 .tree-empty { color: var(--muted); font-size: 11px; font-style: italic; padding: 3px 8px; }
 
+/* Git change tinting in the tree */
+.tree-row.chg-new .tree-name { color: var(--ok); }
+.tree-row.chg-new .file-icon, .tree-row.chg-new .folder-icon { filter: none; }
+.tree-row.chg-mod .tree-name { color: var(--warn); }
+.tree-row.chg-contains .tree-name { color: var(--warn); opacity: 0.85; }
+.tree-row.chg-del .tree-name { color: var(--accent-2); text-decoration: line-through; }
+/* a small dot after changed names */
+.tree-row.chg-new .tree-name::after,
+.tree-row.chg-mod .tree-name::after,
+.tree-row.chg-del .tree-name::after {
+  content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  margin-left: 6px; vertical-align: middle; background: currentColor;
+}
+
 .sidebar-foot { padding: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
 .block-btn {
   width: 100%; text-align: center; font-family: inherit; font-size: 12.5px; font-weight: 600;

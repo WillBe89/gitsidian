@@ -344,7 +344,14 @@ function projectCard(p) {
   header.addEventListener('click', async () => {
     const opening = !wrap.classList.contains('open');
     wrap.classList.toggle('open');
-    if (opening && treeRoot.dataset.loaded === '0') await loadChildren(treeRoot, p.path, 0);
+    if (opening && treeRoot.dataset.loaded === '0') {
+      let changes = null;
+      if (p.git && p.git.isRepo) {
+        const c = await window.gits.changes(p.path);
+        changes = { files: c.files || {}, dirSet: new Set(c.dirs || []) };
+      }
+      await loadChildren(treeRoot, p.path, 0, changes);
+    }
   });
 
   wrap.append(header, meta);
@@ -451,21 +458,33 @@ function renderSidebar() {
 }
 
 // Load + render a directory's immediate children into a container.
-async function loadChildren(container, dirPath, depth) {
+async function loadChildren(container, dirPath, depth, changes) {
   container.dataset.loaded = '1';
   const entries = await window.gits.listDir(dirPath);
   if (!entries.length) {
     container.appendChild(el('div', { class: 'tree-empty', style: `padding-left:${depth * 14 + 24}px` }, 'empty'));
     return;
   }
-  for (const entry of entries) container.appendChild(treeNode(entry, depth));
+  for (const entry of entries) container.appendChild(treeNode(entry, depth, changes));
 }
 
-function treeNode(entry, depth) {
+// Map a path's git change state to a CSS class for tinting the tree.
+function changeClass(p, isDir, changes) {
+  if (!changes) return '';
+  const t = changes.files[p];
+  if (t === 'new') return ' chg-new';
+  if (t === 'deleted') return ' chg-del';
+  if (t === 'modified') return ' chg-mod';
+  if (isDir && changes.dirSet && changes.dirSet.has(p)) return ' chg-contains';
+  return '';
+}
+
+function treeNode(entry, depth, changes) {
   const pad = depth * 14 + 8;
+  const cc = changeClass(entry.path, entry.isDir, changes);
   if (entry.isDir) {
     const item = el('div', { class: 'tree-item' });
-    const row = el('div', { class: 'tree-row dir', style: `padding-left:${pad}px`, title: entry.path },
+    const row = el('div', { class: `tree-row dir${cc}`, style: `padding-left:${pad}px`, title: entry.path },
       el('span', { class: 'twisty', text: '▶' }),
       el('span', { class: 'folder-icon', text: '📁' }),
       el('span', { class: 'tree-name', text: entry.name }),
@@ -475,14 +494,14 @@ function treeNode(entry, depth) {
     row.addEventListener('click', async () => {
       const opening = !item.classList.contains('open');
       item.classList.toggle('open');
-      if (opening && kids.dataset.loaded === '0') await loadChildren(kids, entry.path, depth + 1);
+      if (opening && kids.dataset.loaded === '0') await loadChildren(kids, entry.path, depth + 1, changes);
     });
     item.append(row, kids);
     return item;
   }
 
   // File row — opens in the OS default app (the user's editor); we don't edit here.
-  const row = el('div', { class: 'tree-row file', style: `padding-left:${pad + 16}px`, title: entry.path },
+  const row = el('div', { class: `tree-row file${cc}`, style: `padding-left:${pad + 16}px`, title: entry.path },
     el('span', { class: 'file-icon', text: '·' }),
     el('span', { class: 'tree-name', text: entry.name }),
     el('span', { class: 'run-hint reveal', title: 'Reveal in Finder', text: '⤴' })

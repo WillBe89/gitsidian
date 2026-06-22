@@ -2,6 +2,15 @@
 
 All notable changes to Gitsidian.
 
+## 0.4.6
+
+- **Changed files in the tree** — files are tinted by git status (green = new,
+  amber = modified, red = deleted), and folders containing changes are highlighted,
+  so you can see exactly what differs from GitHub at a glance.
+- **Fix sync-status detection** — repos pushed without upstream tracking are now
+  correctly shown as *synced* / *edits* / *ahead* / *behind* (previously mislabelled
+  as not-published). Push now sets tracking; pull works without it.
+
 ## 0.4.5
 
 - **Fix:** drag-highlight borders no longer get stuck on the sidebar when a drag

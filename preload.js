@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('gits', {
   listAis: () => ipcRenderer.invoke('ai:list'),
   addAi: (opts) => ipcRenderer.invoke('ai:add', opts),
   listDir: (p) => ipcRenderer.invoke('fs:list', p),
+  changes: (p) => ipcRenderer.invoke('git:changes', p),
 
   // Project management
   addFolder: () => ipcRenderer.invoke('vault:addFolder'),
