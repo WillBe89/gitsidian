@@ -1,6 +1,6 @@
 {
   "name": "gitsidian",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "private": true,
   "productName": "Gitsidian",
   "description": "A friendly multi-tab cockpit for running AI coding CLIs (Claude Code, Codex, Ollama …) inside your Obsidian vaults and git repos — no Terminal required.",

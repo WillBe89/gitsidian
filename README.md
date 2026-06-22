@@ -144,7 +144,7 @@ Those fees are what make an app "just open" with no warnings. If Gitsidian is us
 to you, a small donation helps cover them so future builds are signed for everyone —
 **any help is genuinely appreciated** 🙏
 
-❤️ **Sponsor / donate:** [willbe.dev](https://willbe.dev) · or the **Sponsor** button at the top of this repo.
+☕ **Donate:** [Buy Me a Coffee](https://buymeacoffee.com/calclab) · [willbe.dev](https://willbe.dev) · or the **Sponsor** button at the top of this repo.
 
 ## Author
 

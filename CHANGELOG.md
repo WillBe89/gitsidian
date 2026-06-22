@@ -2,6 +2,12 @@
 
 All notable changes to Gitsidian.
 
+## 0.4.5
+
+- **Fix:** drag-highlight borders no longer get stuck on the sidebar when a drag
+  is cancelled or dropped onto a card.
+- Added Buy Me a Coffee donation link.
+
 ## 0.4.4
 
 - **Fix: `gh` / CLIs not found in the packaged app.** A Dock-launched macOS app

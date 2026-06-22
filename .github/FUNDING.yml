@@ -1,6 +1,5 @@
 # Shows a "Sponsor" button on the repo. Enable GitHub Sponsors for the account
 # to activate the first line; the custom link works immediately.
 github: [WillBe89]
+buy_me_a_coffee: calclab
 custom: ["https://willbe.dev"]
-# ko_fi: your-handle        # add if you create a Ko-fi
-# buy_me_a_coffee: handle   # or Buy Me a Coffee
