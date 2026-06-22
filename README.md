@@ -35,12 +35,12 @@ Gitsidian keeps the terminal's power and aesthetic (each session really *is* a t
 
 ## Features
 
-- ** Find repos automatically** — one click scans your computer for git repos and Obsidian vaults and lets you pick which to load. No digging through your file manager.
-- ** Projects + file tree** — browse any project's files; launch an assistant in any sub-folder; click a file to open it in your editor.
-- ** Embedded multi-tab terminals** — real terminals (`node-pty` + `xterm.js`) *inside* the app. Rename tabs, watch their status lights, open as many as you need (up to a safe cap).
-- ** Any AI CLI** — auto-detects whatever you have installed from a broad list (Claude Code, Codex, Gemini, OpenCode, Aider, Goose, Crush, Cursor Agent, Amazon Q, Cody, Plandex, Open Interpreter, gptme, Mods, llm, aichat, Shell GPT, Ollama) and shows only those, plus a plain shell. **Add a command…** lets you run anything else (e.g. `ollama run deepseek-coder`, `aider --model deepseek`) or future tools.
-- ** Friendly composer** — a normal text box per session: command history (↑/↓), Ctrl+C / Ctrl+L, drag-and-drop file paths, quick-command buttons, and reliable Enter-to-send even inside full-screen TUIs.
-- ** Live status lights** — each tab shows **busy** (the assistant is working), **idle** (waiting on you), or **exited**, plus an unread dot on background tabs.
+- **Find repos automatically** — one click scans your computer for git repos and Obsidian vaults and lets you pick which to load. No digging through your file manager.
+- **Projects + file tree** — browse any project's files; launch an assistant in any sub-folder; click a file to open it in your editor.
+- **Embedded multi-tab terminals** — real terminals (`node-pty` + `xterm.js`) *inside* the app. Rename tabs, watch their status lights, open as many as you need (up to a safe cap).
+- **Any AI CLI** — auto-detects whatever you have installed from a broad list (Claude Code, Codex, Gemini, OpenCode, Aider, Goose, Crush, Cursor Agent, Amazon Q, Cody, Plandex, Open Interpreter, gptme, Mods, llm, aichat, Shell GPT, Ollama) and shows only those, plus a plain shell. **Add a command…** lets you run anything else (e.g. `ollama run deepseek-coder`, `aider --model deepseek`) or future tools.
+- **Friendly composer** — a normal text box per session: command history (↑/↓), Ctrl+C / Ctrl+L, drag-and-drop file paths, quick-command buttons, and reliable Enter-to-send even inside full-screen TUIs.
+- **Live status lights** — each tab shows **busy** (the assistant is working), **idle** (waiting on you), or **exited**, plus an unread dot on background tabs.
 - **🔗Git without the terminal** — click a repo's status badge to:
   | Badge | Meaning | Click does |
   |---|---|---|
@@ -49,9 +49,9 @@ Gitsidian keeps the terminal's power and aesthetic (each session really *is* a t
   | `N↑ to push` | Committed, not pushed | Push |
   | `N↓ get latest` | Behind the remote | Pull (fast-forward, safe) |
   | `synced` | Up to date | — |
-- ** Safety guard-rails** — pushing to a **public** repo needs a deliberate confirmation; **read-only** repos block the push (but you can still pull); your private repos stay one-click easy.
-- ** GitHub account switcher** — a chip in the title bar shows your active account; switch between accounts (e.g. personal vs work) or add one, without the terminal.
-- ** Slack-style organisation** — drag projects into groups, reorder and rename them, remove what you don't want. Your layout persists across restarts.
+- **Safety guard-rails** — pushing to a **public** repo needs a deliberate confirmation; **read-only** repos block the push (but you can still pull); your private repos stay one-click easy.
+- **GitHub account switcher** — a chip in the title bar shows your active account; switch between accounts (e.g. personal vs work) or add one, without the terminal.
+- **Slack-style organisation** — drag projects into groups, reorder and rename them, remove what you don't want. Your layout persists across restarts.
 
 ## Install
 
@@ -71,13 +71,13 @@ Gitsidian keeps the terminal's power and aesthetic (each session really *is* a t
 ```sh
 curl -fsSL https://raw.githubusercontent.com/WillBe89/gitsidian/master/install.sh | bash
 ```
-Downloads the latest build, installs it to Applications, and clears the quarantine flag so it opens without the security prompt. *(Works once the repo is public.)*
+Downloads the latest build, installs it to Applications, and clears the quarantine flag so it opens without the security prompt.
 
 ### Homebrew (macOS)
 ```sh
 brew install --cask willbe89/gitsidian/gitsidian
 ```
-No security prompt — Homebrew clears quarantine on install. *(Available once the repo is public.)*
+No security prompt — Homebrew downloads it directly, so it isn't quarantined.
 
 ### From source (any platform)
 ```sh
@@ -122,7 +122,7 @@ Vaults are discovered from Obsidian's own registry plus a home-folder scan; your
 npm run pack     # quick unpacked .app/.exe in dist/ (for testing)
 npm run dist     # installer(s) for the current OS in dist/
 ```
-Or just push a `v*` tag — CI builds **both** macOS and Windows and attaches them to the GitHub Release automatically. Builds are unsigned by default; add your signing credentials to `package.json` → `build` to ship signed/notarised apps.
+Or just push a `v*` tag — CI builds **both** macOS and Windows and attaches them to the GitHub Release automatically. Builds are **ad-hoc signed but not notarized** by default; add Apple Developer / Windows signing credentials to `package.json` → `build` to ship notarised/signed apps with no security prompt.
 
 ## Roadmap
 
