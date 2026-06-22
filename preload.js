@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('gits', {
   // Streams from main
   onPtyData: (cb) => ipcRenderer.on('pty:data', (_e, payload) => cb(payload)),
   onPtyStatus: (cb) => ipcRenderer.on('pty:status', (_e, payload) => cb(payload)),
+  onShortcut: (cb) => ipcRenderer.on('shortcut', (_e, action) => cb(action)),
 
   // Resolve the absolute path of a dropped File (Electron 33: File.path is gone).
   pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return null; } },

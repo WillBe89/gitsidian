@@ -764,6 +764,8 @@ function fitAndResize(s) {
 function closeSession(id) {
   const s = sessions.get(id);
   if (!s) return;
+  // Guard against killing a session that's actively running something.
+  if (s.status === 'busy' && !confirm(`"${s.label}" is still running. Close it and stop the process?`)) return;
   window.gits.ptyKill(id);
   s.term.dispose();
   s.pane.remove();
@@ -826,8 +828,48 @@ window.gits.onPtyData(({ id, data }) => {
 });
 
 window.gits.onPtyStatus(({ id, busy, alive }) => {
+  const s = sessions.get(id);
+  if (!s) return;
   if (!alive) { setStatus(id, 'dead'); return; }
-  setStatus(id, busy ? 'busy' : 'idle');
+  const wasBusy = s.status === 'busy';
+  if (busy) {
+    if (!wasBusy) s.busyStart = Date.now();
+    setStatus(id, 'busy');
+  } else {
+    setStatus(id, 'idle');
+    // Notify when a *background* session finishes a sustained task (not quick
+    // shell commands — only if it was busy for a few seconds).
+    if (wasBusy && id !== activeId && s.busyStart && Date.now() - s.busyStart > 4000) {
+      notifyFinished(s);
+    }
+    s.busyStart = null;
+  }
+});
+
+// System notification when a background agent goes idle after real work.
+function notifyFinished(s) {
+  try {
+    const n = new Notification('Gitsidian — ' + s.label, { body: 'Finished and waiting for you.' });
+    n.onclick = () => { activate(s.id); window.focus(); };
+  } catch {}
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard shortcuts (from main: ⌘T/⌘W/⌘K/⌘1-9 on macOS; Ctrl+Shift on others)
+// ---------------------------------------------------------------------------
+window.gits.onShortcut((action) => {
+  if (action === 'new-terminal') {
+    openSession(undefined, 'terminal', 'shell');
+  } else if (action === 'close-tab') {
+    if (activeId) closeSession(activeId);
+  } else if (action === 'clear') {
+    const s = sessions.get(activeId);
+    if (s) { window.gits.ptyInput(s.id, '\x15\x0c'); if (s.composerText) s.composerText.value = ''; }
+  } else if (action.startsWith('switch:')) {
+    const i = parseInt(action.split(':')[1], 10) - 1;
+    const ids = [...sessions.keys()];
+    if (ids[i]) activate(ids[i]);
+  }
 });
 
 // ---------------------------------------------------------------------------

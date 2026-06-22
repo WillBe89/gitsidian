@@ -104,6 +104,8 @@ npm start
 6. **Switch GitHub accounts** from the chip in the top-right.
 7. **Organise** by dragging projects into groups you create with the **New group** button.
 
+**Shortcuts:** ⌘T new terminal · ⌘W close tab · ⌘1–9 switch tabs · ⌘K clear *(Ctrl+Shift on Windows/Linux)*. Closing a tab that's still running asks for confirmation, and a background session that finishes a task pops a notification.
+
 ## How it works
 
 | File | Role |

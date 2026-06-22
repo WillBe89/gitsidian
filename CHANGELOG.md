@@ -2,6 +2,15 @@
 
 All notable changes to Gitsidian.
 
+## 0.4.7
+
+- **Keyboard shortcuts** — ⌘T new terminal, ⌘W close tab, ⌘1–9 switch tabs, ⌘K
+  clear (Ctrl+Shift on Windows/Linux).
+- **Confirm before closing a running tab** — so you don't kill a session mid-task.
+- **"Finished" notification** — a system notification when a *background* session
+  completes a sustained task (not quick commands).
+- Removed decorative emojis from the UI for a cleaner look.
+
 ## 0.4.6
 
 - **Changed files in the tree** — files are tinted by git status (green = new,

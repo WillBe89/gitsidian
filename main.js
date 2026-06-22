@@ -376,6 +376,25 @@ function createWindow() {
     },
   });
   win.loadFile('index.html');
+
+  // App keyboard shortcuts. On macOS use Cmd (terminals use Ctrl, so no clash);
+  // on Windows/Linux use Ctrl+Shift to avoid clobbering terminal Ctrl keys.
+  // preventDefault() here also overrides menu accelerators (e.g. Cmd+W close window).
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const mac = process.platform === 'darwin';
+    const mod = mac ? (input.meta && !input.control && !input.alt)
+                    : (input.control && input.shift && !input.alt);
+    if (!mod) return;
+    const key = (input.key || '').toLowerCase();
+    let action = null;
+    if (key === 't') action = 'new-terminal';
+    else if (key === 'w') action = 'close-tab';
+    else if (key === 'k') action = 'clear';
+    else if (mac && /^[1-9]$/.test(key)) action = 'switch:' + key; // Cmd+1..9
+    if (action) { event.preventDefault(); win.webContents.send('shortcut', action); }
+  });
+
   return win;
 }
 
