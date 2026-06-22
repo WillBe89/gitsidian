@@ -58,9 +58,10 @@ Gitsidian keeps the terminal's power and aesthetic (each session really *is* a t
 ### macOS
 1. Download the **`.dmg`** from the [latest release](https://github.com/WillBe89/gitsidian/releases/latest) (Apple Silicon and Intel builds are provided).
 2. Open it and drag **Gitsidian** to Applications.
-3. The build is ad-hoc signed but not notarized, so on first launch macOS asks you to confirm:
-   **right-click the app → Open → Open**. If it's still blocked, go to **System Settings → Privacy & Security** and click **Open Anyway**.
-   As a last resort: `xattr -dr com.apple.quarantine /Applications/Gitsidian.app`.
+3. The build is ad-hoc signed but **not notarized** (no paid Apple Developer cert), so macOS asks you to allow it **once**:
+   - Double-click Gitsidian → you'll see *"Apple could not verify…"* → click **Done**.
+   - Open **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway** next to Gitsidian; authenticate and confirm.
+   - It opens normally from then on. *(Terminal shortcut: `xattr -dr com.apple.quarantine /Applications/Gitsidian.app`.)*
 
 ### Windows
 1. Download **`Gitsidian Setup x.y.z.exe`** from the [latest release](https://github.com/WillBe89/gitsidian/releases/latest).
