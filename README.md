@@ -8,8 +8,8 @@
 
 Open any git repo or Obsidian vault, browse its files, and run Claude Code, Codex, Ollama, or a plain shell — several at once, each in its own tab with a live status light. Publish, push, and pull to GitHub from the sidebar, with guard-rails that stop you damaging public repos.
 
-[![Download for macOS](https://img.shields.io/badge/⬇_Download-macOS-black?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
-[![Download for Windows](https://img.shields.io/badge/⬇_Download-Windows-0078D6?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
+[![Download for macOS](https://img.shields.io/badge/Download-macOS-black?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows-0078D6?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
 
 ![license: MIT](https://img.shields.io/badge/license-MIT-blue) ![platforms](https://img.shields.io/badge/platforms-macOS_·_Windows-555)
 
@@ -41,7 +41,7 @@ Gitsidian keeps the terminal's power and aesthetic (each session really *is* a t
 - **Any AI CLI** — auto-detects whatever you have installed from a broad list (Claude Code, Codex, Gemini, OpenCode, Aider, Goose, Crush, Cursor Agent, Amazon Q, Cody, Plandex, Open Interpreter, gptme, Mods, llm, aichat, Shell GPT, Ollama) and shows only those, plus a plain shell. **Add a command…** lets you run anything else (e.g. `ollama run deepseek-coder`, `aider --model deepseek`) or future tools.
 - **Friendly composer** — a normal text box per session: command history (↑/↓), Ctrl+C / Ctrl+L, drag-and-drop file paths, quick-command buttons, and reliable Enter-to-send even inside full-screen TUIs.
 - **Live status lights** — each tab shows **busy** (the assistant is working), **idle** (waiting on you), or **exited**, plus an unread dot on background tabs.
-- **🔗Git without the terminal** — click a repo's status badge to:
+- **Git without the terminal** — click a repo's status badge to:
   | Badge | Meaning | Click does |
   |---|---|---|
   | `↥ Publish` | Not on GitHub yet | Create the repo + push |
@@ -96,13 +96,13 @@ npm start
 
 ## Using it
 
-1. **Load your projects.** Click **🔍 Find repos on this Mac/PC** and tick the ones to add — or **📂 Open Folder** for a specific folder, or **⤓ Import repo…** to clone a git URL.
+1. **Load your projects.** Click **Find repos on this Mac/PC** and tick the ones to add — or **Open Folder** for a specific folder, or **Import repo…** to clone a git URL.
 2. **Open a session.** Expand a project, hover a folder, and click **▸ run** — a tab opens with your chosen assistant running there. The dropdown at the top picks which assistant new tabs use.
 3. **Work in the composer.** Type in the box at the bottom and press **Enter** to send; **Shift+Enter** for a new line; **↑/↓** for history. Drag a file in to drop its path. The terminal above stays fully interactive too.
 4. **Run several at once.** Each session is its own tab with a status light, so you can have Claude working in one repo while you review another. Double-click a tab to rename it.
 5. **Handle git from the sidebar.** A repo's badge tells you its state — click it to publish, push, or pull, with safety prompts where it matters.
 6. **Switch GitHub accounts** from the chip in the top-right.
-7. **Organise** by dragging projects into groups you create with the **⊞** button.
+7. **Organise** by dragging projects into groups you create with the **New group** button.
 
 ## How it works
 
@@ -141,9 +141,9 @@ problem:
 
 Those fees are what make an app "just open" with no warnings. If Gitsidian is useful
 to you, a small donation helps cover them so future builds are signed for everyone —
-**any help is genuinely appreciated** 🙏
+any help is genuinely appreciated.
 
-☕ **Donate:** [Buy Me a Coffee](https://buymeacoffee.com/calclab) · [willbe.dev](https://willbe.dev) · or the **Sponsor** button at the top of this repo.
+**Donate:** [Buy Me a Coffee](https://buymeacoffee.com/calclab) · [willbe.dev](https://willbe.dev) · or the **Sponsor** button at the top of this repo.
 
 ## Author
 

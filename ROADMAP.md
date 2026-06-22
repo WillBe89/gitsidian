@@ -32,4 +32,4 @@ that removes the OS security prompts (see the README's **Support** section).
 
 ---
 
-Have an idea? Open an issue. ❤️
+Have an idea? Open an issue.
