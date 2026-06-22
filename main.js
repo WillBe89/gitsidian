@@ -2,7 +2,7 @@
 'use strict';
 
 const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
-const { execFile } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const pty = require('node-pty');
 const path = require('path');
 const fs = require('fs');
@@ -12,6 +12,19 @@ const crypto = require('crypto');
 // Pin the app name so user data (added projects, settings) always lives under
 // ".../Application Support/Gitsidian" — not the dev-mode default of "Electron".
 app.setName('Gitsidian');
+
+// GUI-launched macOS apps inherit only a minimal PATH (no /opt/homebrew/bin),
+// so CLIs like `gh` aren't found. Recover the real PATH from a login shell.
+function patchPathFromLoginShell() {
+  if (process.platform === 'win32') return;
+  try {
+    const sh = process.env.SHELL || '/bin/zsh';
+    const out = execFileSync(sh, ['-lic', 'echo "G1TSIDIAN_PATH=$PATH"'], { timeout: 5000 }).toString();
+    const m = out.match(/G1TSIDIAN_PATH=(.+)/);
+    if (m && m[1].trim()) process.env.PATH = m[1].trim();
+  } catch {}
+}
+patchPathFromLoginShell();
 
 // ===========================================================================
 // Helpers

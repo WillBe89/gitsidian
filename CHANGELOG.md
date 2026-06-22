@@ -2,6 +2,13 @@
 
 All notable changes to Gitsidian.
 
+## 0.4.4
+
+- **Fix: `gh` / CLIs not found in the packaged app.** A Dock-launched macOS app
+  doesn't inherit your shell PATH, so the GitHub account switcher showed "gh not
+  installed" and publish/push/pull failed. The app now recovers your real PATH at
+  startup, so all git/GitHub features work when launched normally.
+
 ## 0.4.3
 
 - **Fix macOS "app is damaged" error** — the build now gets a proper ad-hoc code
