@@ -126,10 +126,9 @@ Or just push a `v*` tag — CI builds **both** macOS and Windows and attaches th
 
 ## Roadmap
 
-- Code-signing / notarisation for both platforms.
-- Per-file git status tinting in the tree.
-- Paste-an-image-as-file for AI sessions; tab-completion passthrough.
-- Linux packaging.
+See **[ROADMAP.md](ROADMAP.md)** for what's planned — highlights: a close-running-tab
+warning, a settings/personalization panel, pull preview with download size,
+mark-as-ignore, code signing/notarization, auto-update, and Linux packaging.
 
 ## Support
 
