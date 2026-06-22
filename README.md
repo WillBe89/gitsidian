@@ -67,6 +67,18 @@ Gitsidian keeps the terminal's power and aesthetic (each session really *is* a t
 1. Download **`Gitsidian Setup x.y.z.exe`** from the [latest release](https://github.com/WillBe89/gitsidian/releases/latest).
 2. Run it. SmartScreen may warn because the build is unsigned — choose **More info → Run anyway**.
 
+### Quick install (macOS, one command)
+```sh
+curl -fsSL https://raw.githubusercontent.com/WillBe89/gitsidian/master/install.sh | bash
+```
+Downloads the latest build, installs it to Applications, and clears the quarantine flag so it opens without the security prompt. *(Works once the repo is public.)*
+
+### Homebrew (macOS)
+```sh
+brew install --cask willbe89/gitsidian/gitsidian
+```
+No security prompt — Homebrew clears quarantine on install. *(Available once the repo is public.)*
+
 ### From source (any platform)
 ```sh
 git clone https://github.com/WillBe89/gitsidian.git
@@ -118,6 +130,21 @@ Or just push a `v*` tag — CI builds **both** macOS and Windows and attaches th
 - Per-file git status tinting in the tree.
 - Paste-an-image-as-file for AI sessions; tab-completion passthrough.
 - Linux packaging.
+
+## Support
+
+Gitsidian is **free and ad-free**. The security warnings you see on first launch
+are because the app isn't *notarized* — and that's purely a cost thing, not a code
+problem:
+
+- **Apple Developer Program** — US$99 / year (to notarise the macOS build)
+- **Windows code-signing certificate** — roughly US$100–400 / year
+
+Those fees are what make an app "just open" with no warnings. If Gitsidian is useful
+to you, a small donation helps cover them so future builds are signed for everyone —
+**any help is genuinely appreciated** 🙏
+
+❤️ **Sponsor / donate:** [willbe.dev](https://willbe.dev) · or the **Sponsor** button at the top of this repo.
 
 ## Author
 
