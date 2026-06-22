@@ -33,6 +33,16 @@ Gitsidian keeps the terminal's power and aesthetic (each session really *is* a t
 - **Non-technical people** (marketing, ops, writers) who need to use an AI assistant on a shared repo or knowledge base but shouldn't have to learn the terminal or git.
 - **Obsidian users** whose vaults are git repos — edit notes locally, and pull/push to share with a team, all from one place.
 
+## Screenshots
+
+Projects organised into groups, with one-click git status on each:
+
+![Gitsidian — projects and git status](screenshots/overview.png)
+
+Several AI sessions running side by side, each in its own tab:
+
+![Gitsidian — multiple sessions](screenshots/sessions.png)
+
 ## Features
 
 - **Find repos automatically** — one click scans your computer for git repos and Obsidian vaults and lets you pick which to load. No digging through your file manager.
