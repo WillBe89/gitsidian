@@ -14,6 +14,24 @@ contextBridge.exposeInMainWorld('gits', {
   changes: (p) => ipcRenderer.invoke('git:changes', p),
   ignore: (opts) => ipcRenderer.invoke('git:ignore', opts),
 
+  // File operations (editor + tree management)
+  readFile: (p) => ipcRenderer.invoke('fs:read', p),
+  writeFile: (opts) => ipcRenderer.invoke('fs:write', opts),
+  createEntry: (opts) => ipcRenderer.invoke('fs:create', opts),
+  renameEntry: (opts) => ipcRenderer.invoke('fs:rename', opts),
+  deleteEntry: (p) => ipcRenderer.invoke('fs:delete', p),
+  saveImage: (opts) => ipcRenderer.invoke('fs:saveImage', opts),
+
+  // Git: diff / branches / AI commit message
+  diff: (opts) => ipcRenderer.invoke('git:diff', opts),
+  branches: (p) => ipcRenderer.invoke('git:branches', p),
+  checkout: (opts) => ipcRenderer.invoke('git:checkout', opts),
+  commitMessage: (p) => ipcRenderer.invoke('ai:commitMessage', p),
+
+  // Session persistence
+  saveSession: (data) => ipcRenderer.invoke('session:save', data),
+  loadSession: () => ipcRenderer.invoke('session:load'),
+
   // Project management
   addFolder: () => ipcRenderer.invoke('vault:addFolder'),
   addPaths: (paths) => ipcRenderer.invoke('vault:addPaths', paths),
@@ -25,6 +43,13 @@ contextBridge.exposeInMainWorld('gits', {
   sync: (opts) => ipcRenderer.invoke('git:sync', opts),
   pull: (p) => ipcRenderer.invoke('git:pull', p),
   pullPreview: (p) => ipcRenderer.invoke('git:pullPreview', p),
+
+  // Auto-update
+  appVersion: () => ipcRenderer.invoke('app:version'),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: (asset) => ipcRenderer.invoke('update:download', asset),
+  installUpdate: (filePath) => ipcRenderer.invoke('update:install', filePath),
+  onUpdateProgress: (cb) => ipcRenderer.on('update:progress', (_e, payload) => cb(payload)),
 
   // GitHub accounts
   ghAccounts: () => ipcRenderer.invoke('gh:accounts'),

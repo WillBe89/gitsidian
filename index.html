@@ -52,6 +52,7 @@
           <button id="find-repos" class="block-btn primary">Find repos on this Mac</button>
           <button id="add-folder" class="block-btn">Open Folder…</button>
           <button id="import-repo" class="block-btn">⤓ Import repo…</button>
+          <button id="app-version" class="version-line" title="Click to check for updates">Gitsidian</button>
         </div>
       </aside>
 
@@ -103,9 +104,37 @@
           <option value="10000">10,000</option>
           <option value="50000">50,000</option>
         </select>
+        <label class="mini-label">Appearance</label>
+        <div class="radio-row">
+          <label><input type="radio" name="theme" value="dark" /> Dark</label>
+          <label><input type="radio" name="theme" value="light" /> Light</label>
+        </div>
+        <label class="mini-label">Sessions</label>
+        <label class="check-row"><input type="checkbox" id="settings-restore" /> Reopen my tabs when I relaunch</label>
+        <label class="mini-label">Updates</label>
+        <label class="check-row"><input type="checkbox" id="settings-autoupdate" /> Check for updates on launch</label>
+        <div class="settings-update-row">
+          <button id="settings-check-update" class="block-btn">Check for updates now</button>
+          <span id="settings-version" class="hint"></span>
+        </div>
         <div class="modal-actions">
           <button id="settings-close" class="block-btn primary">Done</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Update-available modal -->
+    <div id="update-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3 id="update-title">Update available</h3>
+        <p class="hint" id="update-sub"></p>
+        <div id="update-notes" class="update-notes"></div>
+        <div id="update-progress-wrap" class="update-progress hidden"><div id="update-progress-bar"></div></div>
+        <div class="modal-actions">
+          <button id="update-later" class="block-btn">Later</button>
+          <button id="update-go" class="block-btn primary">Update now</button>
+        </div>
+        <div id="update-status" class="import-status"></div>
       </div>
     </div>
 
@@ -184,7 +213,10 @@
         <p class="hint" id="sync-repo"></p>
         <p class="hint" id="sync-state"></p>
         <div id="sync-push-section">
-          <label class="mini-label">Commit message</label>
+          <div class="label-row">
+            <label class="mini-label">Commit message</label>
+            <button id="sync-suggest" class="link-btn" type="button" title="Generate a commit message from your changes">✦ Suggest</button>
+          </div>
           <input id="sync-message" type="text" />
           <div id="sync-files" class="sync-files"></div>
         </div>

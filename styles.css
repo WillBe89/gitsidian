@@ -14,8 +14,25 @@
   --info: #58a6ff;
   --busy: #e2b53a;
   --radius: 10px;
+  --term-bg: #0a0c10;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: "SF Mono", ui-monospace, Menlo, Monaco, "Cascadia Code", monospace;
+}
+
+/* Light theme — overrides the dark variables above. */
+:root[data-theme="light"] {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --panel-2: #f0f2f5;
+  --panel-3: #e4e8ee;
+  --line: #d7dce3;
+  --text: #1b1f27;
+  --muted: #5b6675;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --info: #0969da;
+  --busy: #bf8700;
+  --term-bg: #ffffff;
 }
 
 * { box-sizing: border-box; }
@@ -272,6 +289,12 @@ body.plat-mac .titlebar { padding-left: 80px; } /* clear the macOS traffic light
 }
 
 .sidebar-foot { padding: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.version-line {
+  background: none; border: 0; color: var(--muted); font-family: inherit; font-size: 11px;
+  text-align: center; padding: 4px 0 0; cursor: pointer; opacity: 0.7;
+}
+.version-line:hover { opacity: 1; color: var(--text); }
+.version-line.update { color: var(--accent-2); opacity: 1; }
 .block-btn {
   width: 100%; text-align: center; font-family: inherit; font-size: 12.5px; font-weight: 600;
   background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
@@ -357,7 +380,11 @@ body.plat-mac .titlebar { padding-left: 80px; } /* clear the macOS traffic light
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-.terminals { flex: 1; position: relative; background: #0a0c10; min-height: 0; }
+.terminals { flex: 1; position: relative; background: var(--term-bg); min-height: 0; }
+/* Split view — active terminal on the left, the chosen second on the right. */
+.terminals.split .term-pane.active { inset: 0 50% 0 0; }
+.terminals.split .term-pane.split-2 { display: flex; inset: 0 0 0 50%; border-left: 1px solid var(--line); }
+.new-tab.split-toggle.on { color: var(--accent-2); border-color: var(--accent-2); }
 .term-pane { position: absolute; inset: 0; display: none; flex-direction: column; }
 .term-pane.active { display: flex; }
 .term-pane.drop::after {
@@ -458,3 +485,55 @@ body.plat-mac .titlebar { padding-left: 80px; } /* clear the macOS traffic light
 .import-status { margin-top: 10px; font-size: 12px; color: var(--muted); min-height: 16px; white-space: pre-wrap; }
 .import-status.err { color: var(--accent-2); }
 .import-status.ok { color: var(--ok); }
+
+/* Updates */
+.settings-update-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.settings-update-row .block-btn { flex: 0 0 auto; }
+.settings-update-row .hint { margin: 0; }
+.update-notes {
+  font-size: 12px; color: var(--muted); line-height: 1.5;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 12px; margin: 10px 0 0; max-height: 200px; overflow: auto; white-space: pre-wrap;
+}
+.update-notes:empty { display: none; }
+.update-progress { margin-top: 12px; height: 8px; border-radius: 5px; background: var(--panel-3); overflow: hidden; }
+.update-progress.hidden { display: none; }
+#update-progress-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.15s linear; }
+
+/* Built-in editor + diff panes ------------------------------------------- */
+.editor-pane, .diff-pane { display: none; flex-direction: column; height: 100%; }
+.editor-pane.active, .diff-pane.active { display: flex; }
+.editor-text {
+  flex: 1; width: 100%; resize: none; border: 0; outline: none;
+  background: var(--bg); color: var(--text);
+  font-family: var(--mono); font-size: 13px; line-height: 1.5;
+  padding: 12px 14px; tab-size: 2;
+}
+.editor-bar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px; border-top: 1px solid var(--line); background: var(--panel);
+}
+.editor-info { flex: 1; font-size: 11px; color: var(--muted); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.editor-bar .send-btn:disabled { opacity: 0.45; cursor: default; }
+.tab-ai.edit, .tab-ai.diff { background: var(--panel-3); color: var(--muted); }
+.tab.editor.dirty .tab-status, .tab.dirty .tab-status { background: var(--warn); }
+.tab.editor .tab-status, .tab.diff .tab-status { background: var(--muted); }
+
+.diff-view {
+  flex: 1; overflow: auto; margin: 0; padding: 10px 0;
+  background: var(--bg); font-family: var(--mono); font-size: 12px; line-height: 1.45;
+}
+.d-line { padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
+.d-add { background: rgba(63,185,80,0.14); color: #9be3ab; }
+.d-del { background: rgba(226,58,99,0.14); color: #ff9bb0; }
+.d-hunk { color: var(--info); background: var(--panel-2); }
+.d-meta { color: var(--muted); }
+.d-ctx { color: var(--text); }
+.tree-row .diffbtn { color: var(--warn); font-weight: 700; }
+
+/* Suggest-message link + branch button ----------------------------------- */
+.label-row { display: flex; align-items: center; justify-content: space-between; }
+.link-btn { background: none; border: 0; color: var(--info); font-size: 11.5px; cursor: pointer; padding: 0; font-family: inherit; }
+.link-btn:hover { text-decoration: underline; }
+.link-btn:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+.branch-btn { font-family: var(--mono); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

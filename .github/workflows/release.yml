@@ -1,6 +1,6 @@
 name: Release
 
-# Build macOS + Windows installers whenever a version tag is pushed,
+# Build macOS + Windows + Linux installers whenever a version tag is pushed,
 # and attach them to the GitHub Release for that tag.
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -35,8 +35,13 @@ jobs:
       - name: Build installer (${{ matrix.os }})
         run: npm run dist -- --publish never
         env:
-          # No code signing in CI for now (unsigned builds).
+          # macOS code signing stays off until a Developer ID is configured.
+          # Add the secrets below and flip this to enable signing + notarization
+          # (build/notarize.js no-ops while the Apple secrets are empty).
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Attach artifacts to the Release
         if: always()
@@ -46,5 +51,7 @@ jobs:
             dist/*.dmg
             dist/*.zip
             dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

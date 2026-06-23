@@ -4,35 +4,33 @@ Ideas for future releases — roughly in priority order, not firm commitments.
 Suggestions and contributions welcome; sponsorship helps fund the signing/notarization
 that removes the OS security prompts (see the README's **Support** section).
 
-## Editing & files
-- **Built-in lightweight editor** — open a file in a tab and make quick edits without
-  needing an external editor (VS Code etc.), right next to the AI terminal for that
-  project. (Today, clicking a file opens it in your OS default app for that type.)
-- **File management in the tree** — rename, create, and delete files/folders directly
-  in Gitsidian.
-
 ## Git & GitHub
-- **Inline diff** — click a changed file to see exactly what changed.
-- **AI-assisted commit messages** and a quick branch switcher.
+- **Stage/unstage individual files** before committing.
+- **Conflict helper** for non-fast-forward pulls.
+
+## Editing & files
+- **Syntax highlighting** in the built-in editor (today it's plain monospace).
+- **Multi-file search** across a project.
 
 ## Sessions
-- **Session persistence** — restore open tabs/projects on relaunch.
-- **Split terminals** — two sessions side by side in one tab.
-- **Paste an image → file** for AI sessions (great for screenshots).
+- **Drag tabs to reorder**, and split into more than two panes.
 
 ## Personalization
-- **Light theme** and more layout/density options (builds on the existing accent,
-  font-size, and font-style settings).
+- **More themes** and layout/density options (builds on Dark/Light + accent).
 
 ## Distribution
-- **Code signing & notarization** (macOS + Windows) to remove the security warnings.
-- **Auto-update** so new versions install without a manual re-download.
-- **Linux packaging** (AppImage / `.deb`).
+- **Code signing & notarization** (macOS + Windows) to remove the security
+  warnings — the build is already wired for it; it needs a paid Developer ID.
 
 ## Shipped recently
-Close-running-tab confirm · keyboard shortcuts · agent-finished notifications ·
-changed-file tinting · mark-as-ignore · pull preview (files + size) · settings panel
-(accent, font size, scrollback, default AI).
+Built-in editor · file management in the tree (create/rename/delete) · inline
+diff · branch switcher · AI-suggested commit messages · session persistence ·
+light theme · paste-image-as-file · split terminals · auto-update · Linux
+packaging (AppImage / .deb).
+
+Earlier: close-running-tab confirm · keyboard shortcuts · agent-finished
+notifications · changed-file tinting · mark-as-ignore · pull preview · settings
+panel.
 
 ---
 

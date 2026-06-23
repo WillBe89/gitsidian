@@ -38,6 +38,17 @@ let ais = [];
 const newTermBtn = el('button', { class: 'new-tab', title: 'New terminal (shell, in your home folder)', text: '+' });
 newTermBtn.addEventListener('click', () => openSession(undefined, 'terminal', 'shell'));
 
+// Split view: show a second terminal alongside the active one.
+let splitId = null;
+const splitBtn = el('button', { class: 'new-tab split-toggle', title: 'Split view with another terminal', text: '⊟' });
+splitBtn.addEventListener('click', () => toggleSplit());
+
+// Keep the persistent "+" and split controls at the end of the tab strip.
+function appendTabControls() {
+  tabbar.appendChild(newTermBtn);
+  tabbar.appendChild(splitBtn);
+}
+
 // Lightweight non-blocking toast for occasional notices (e.g. session cap).
 let toastTimer = null;
 function showToast(msg) {
@@ -65,6 +76,23 @@ const TERM_THEME = {
   white: '#d7dce5', brightWhite: '#ffffff',
 };
 
+const TERM_THEME_LIGHT = {
+  background: '#ffffff',
+  foreground: '#1b1f27',
+  cursor: '#c0264b',
+  cursorAccent: '#ffffff',
+  selectionBackground: '#cfe0ff',
+  black: '#1b1f27', brightBlack: '#5b6675',
+  red: '#cf222e', brightRed: '#e2547d',
+  green: '#1a7f37', brightGreen: '#2da44e',
+  yellow: '#9a6700', brightYellow: '#bf8700',
+  blue: '#0969da', brightBlue: '#218bff',
+  magenta: '#8250df', brightMagenta: '#a371f7',
+  cyan: '#1b7c83', brightCyan: '#3192aa',
+  white: '#6e7781', brightWhite: '#1b1f27',
+};
+function termTheme() { return settings.theme === 'light' ? TERM_THEME_LIGHT : TERM_THEME; }
+
 // ---------------------------------------------------------------------------
 // Tiny DOM helper
 // ---------------------------------------------------------------------------
@@ -85,6 +113,16 @@ function el(tag, attrs = {}, ...children) {
 }
 
 function basename(p) { return p.replace(/\/+$/, '').split('/').pop(); }
+
+// Encode bytes to base64 without blowing the call stack on large images.
+function bytesToBase64(bytes) {
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
 
 // Minimal right-click context menu.
 let ctxMenuEl = null;
@@ -126,6 +164,9 @@ function loadSettings() {
     bold: !!s.bold,
     italic: !!s.italic,
     defaultAi: s.defaultAi || null,
+    autoUpdate: s.autoUpdate !== false, // opt-out; checks on launch by default
+    restoreTabs: s.restoreTabs !== false, // opt-out; reopen tabs on relaunch
+    theme: s.theme === 'light' ? 'light' : 'dark',
   };
 }
 let settings = loadSettings();
@@ -137,11 +178,13 @@ function applyAccent() {
 }
 function applyFontSize() {
   for (const s of sessions.values()) {
+    if (!s.term) continue;
     try { s.term.options.fontSize = settings.fontSize; s.fit.fit(); window.gits.ptyResize(s.id, s.term.cols, s.term.rows); } catch {}
   }
 }
 function applyFontStyle() {
   for (const s of sessions.values()) {
+    if (!s.term) continue;
     try {
       s.term.options.fontWeight = settings.bold ? 'bold' : 'normal';
       s.host.classList.toggle('term-italic', settings.italic);
@@ -149,7 +192,16 @@ function applyFontStyle() {
     } catch {}
   }
 }
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', settings.theme === 'light' ? 'light' : 'dark');
+  const t = termTheme();
+  for (const s of sessions.values()) {
+    if (!s.term) continue;
+    try { s.term.options.theme = t; } catch {}
+  }
+}
 applyAccent();
+applyTheme();
 
 // ---------------------------------------------------------------------------
 // AI picker
@@ -223,6 +275,30 @@ function handleBadge(p, actions) {
   if (actions.includes('publish')) return openPublish(p);
   if (actions.length === 1 && actions[0] === 'pull') return openPullPreview(p);
   return openSync(p);
+}
+
+// Branch switcher — list branches in a context menu; switch or create.
+async function openBranchMenu(e, p) {
+  const res = await window.gits.branches(p.path);
+  if (!res.ok) { showToast(res.error || 'Could not list branches.'); return; }
+  const items = res.branches.map((b) => ({
+    label: (b === res.current ? '✓ ' : '    ') + b,
+    onClick: () => { if (b !== res.current) switchBranch(p, b); },
+  }));
+  items.push({ label: '+ New branch…', onClick: () => createBranch(p) });
+  showContextMenu(e.clientX, e.clientY, items);
+}
+async function switchBranch(p, branch) {
+  const r = await window.gits.checkout({ repo: p.path, branch });
+  if (r.ok) { showToast(`Switched to ${branch}`); await loadProjects({ fetch: false }); }
+  else showToast(r.error || 'Could not switch branch.');
+}
+async function createBranch(p) {
+  const name = prompt('New branch name:', '');
+  if (!name) return;
+  const r = await window.gits.checkout({ repo: p.path, branch: name.trim(), create: true });
+  if (r.ok) { showToast(`Created and switched to ${name.trim()}`); await loadProjects({ fetch: false }); }
+  else showToast(r.error || 'Could not create branch.');
 }
 
 // A "launch agent here" button shared by project roots and tree folders.
@@ -390,6 +466,10 @@ function projectCard(p) {
   finderBtn.addEventListener('click', (e) => { e.stopPropagation(); window.gits.openFinder(p.path); });
   actions.appendChild(finderBtn);
   if (p.git && p.git.isRepo) {
+    const branchBtn = el('button', { class: 'tiny-btn branch-btn', title: 'Switch / create branch', text: `⎇ ${p.git.branch || '?'}` });
+    branchBtn.addEventListener('click', (e) => { e.stopPropagation(); openBranchMenu(e, p); });
+    actions.appendChild(branchBtn);
+
     const ghBtn = el('button', { class: 'tiny-btn', text: 'GitHub ↗' });
     ghBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -547,13 +627,68 @@ function changeClass(p, isDir, changes) {
   return '';
 }
 
-// Right-click menu for a tree row: ignore / reveal.
-function treeContextMenu(row, entry) {
-  row.addEventListener('contextmenu', (e) => {
+// Reload a tree container (a project root .tree or a folder's .tree-children)
+// in place, re-fetching git tint — used after create / rename / delete.
+async function refreshContainer(container) {
+  if (!container || container.dataset.path == null) return;
+  const dirPath = container.dataset.path;
+  const depth = parseInt(container.dataset.depth || '0', 10);
+  const treeRoot = container.classList.contains('tree') ? container : container.closest('.tree');
+  const repo = treeRoot && treeRoot.dataset.path;
+  let changes = null;
+  if (repo && projectIndex.get(repo) && projectIndex.get(repo).git && projectIndex.get(repo).git.isRepo) {
+    const c = await window.gits.changes(repo);
+    changes = { files: c.files || {}, dirSet: new Set(c.dirs || []) };
+  }
+  container.innerHTML = '';
+  container.dataset.loaded = '0';
+  await loadChildren(container, dirPath, depth, changes);
+}
+
+// Right-click menu for a tree row: open, file management, ignore, diff, reveal.
+function treeContextMenu(row, entry, depth) {
+  row.addEventListener('contextmenu', async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const root = row.closest('.tree') && row.closest('.tree').dataset.path;
+    const treeRoot = row.closest('.tree');
+    const root = treeRoot && treeRoot.dataset.path;
+    const parentContainer = row.closest('.tree-children') || treeRoot;
     const items = [];
+
+    if (entry.isDir) {
+      const kids = row.nextElementSibling; // this folder's .tree-children
+      const item = row.parentElement;
+      const createInside = async (isDir) => {
+        const name = prompt(`New ${isDir ? 'folder' : 'file'} in "${entry.name}":`, '');
+        if (!name) return;
+        const r = await window.gits.createEntry({ parent: entry.path, name, isDir });
+        if (!r.ok) { showToast(r.error || 'Could not create.'); return; }
+        item.classList.add('open');
+        await refreshContainer(kids);
+        if (!isDir) openEditor(r.path);
+      };
+      items.push({ label: 'New file…', onClick: () => createInside(false) });
+      items.push({ label: 'New folder…', onClick: () => createInside(true) });
+    } else {
+      items.push({ label: 'Open in editor', onClick: () => openEditor(entry.path) });
+      items.push({ label: 'Open in default app', onClick: () => window.gits.openItem(entry.path) });
+      if (root) items.push({ label: 'View changes (diff)', onClick: () => openDiff(root, entry.path) });
+    }
+
+    items.push({ label: 'Rename…', onClick: async () => {
+      const name = prompt('Rename to:', entry.name);
+      if (!name || name === entry.name) return;
+      const r = await window.gits.renameEntry({ path: entry.path, newName: name });
+      if (!r.ok) { showToast(r.error || 'Could not rename.'); return; }
+      await refreshContainer(parentContainer);
+    } });
+    items.push({ label: 'Delete (to Trash)', onClick: async () => {
+      if (!confirm(`Move "${entry.name}" to the Trash?`)) return;
+      const r = await window.gits.deleteEntry(entry.path);
+      if (!r.ok) { showToast(r.error || 'Could not delete.'); return; }
+      await refreshContainer(parentContainer);
+    } });
+
     if (root) items.push({
       label: 'Add to .gitignore',
       onClick: async () => {
@@ -576,26 +711,36 @@ function treeNode(entry, depth, changes) {
       el('span', { class: 'tree-name', text: entry.name }),
       runHereButton(entry.path, entry.name)
     );
-    const kids = el('div', { class: 'tree-children', 'data-loaded': '0' });
+    const kids = el('div', { class: 'tree-children', 'data-loaded': '0', 'data-path': entry.path, 'data-depth': String(depth + 1) });
     row.addEventListener('click', async () => {
       const opening = !item.classList.contains('open');
       item.classList.toggle('open');
       if (opening && kids.dataset.loaded === '0') await loadChildren(kids, entry.path, depth + 1, changes);
     });
-    treeContextMenu(row, entry);
+    treeContextMenu(row, entry, depth);
     item.append(row, kids);
     return item;
   }
 
-  // File row — opens in the OS default app (the user's editor); we don't edit here.
+  // File row — left-click opens in the built-in editor; changed files get a diff button.
   const row = el('div', { class: `tree-row file${cc}`, style: `padding-left:${pad + 16}px`, title: entry.path },
     el('span', { class: 'file-icon', text: '·' }),
-    el('span', { class: 'tree-name', text: entry.name }),
-    el('span', { class: 'run-hint reveal', title: 'Reveal in Finder', text: '⤴' })
+    el('span', { class: 'tree-name', text: entry.name })
   );
-  row.addEventListener('click', () => window.gits.openItem(entry.path));
+  const changed = !!(changes && changes.files[entry.path]);
+  if (changed) {
+    const diffBtn = el('span', { class: 'run-hint diffbtn', title: 'View changes (diff)', text: '±' });
+    diffBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tr = row.closest('.tree');
+      if (tr) openDiff(tr.dataset.path, entry.path);
+    });
+    row.appendChild(diffBtn);
+  }
+  row.appendChild(el('span', { class: 'run-hint reveal', title: 'Reveal in Finder', text: '⤴' }));
+  row.addEventListener('click', () => openEditor(entry.path));
   row.querySelector('.reveal').addEventListener('click', (e) => { e.stopPropagation(); window.gits.reveal(entry.path); });
-  treeContextMenu(row, entry);
+  treeContextMenu(row, entry, depth);
   return row;
 }
 
@@ -713,6 +858,30 @@ function buildComposer(id, term) {
     // natively by macOS text fields, so they already feel like a terminal.
   });
 
+  // Paste an image from the clipboard → save it as a file in the session's
+  // folder and drop its path into the composer (great for screenshots).
+  textarea.addEventListener('paste', async (e) => {
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    for (const it of items) {
+      if (it.kind === 'file' && it.type && it.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = it.getAsFile();
+        if (!file) return;
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const ext = (it.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace('svg+xml', 'svg');
+        const sess = sessions.get(id);
+        const r = await window.gits.saveImage({ dir: sess ? sess.cwd : undefined, base64: bytesToBase64(bytes), ext });
+        if (r.ok) {
+          insert((/\s/.test(r.path) ? `"${r.path}"` : r.path) + ' ');
+          showToast(`Saved image → ${basename(r.path)}`);
+        } else {
+          showToast(r.error || 'Could not save the image.');
+        }
+        return;
+      }
+    }
+  });
+
   // Insert text (e.g. a dropped file path) at the cursor.
   const insert = (text) => {
     const start = textarea.selectionStart ?? textarea.value.length;
@@ -766,7 +935,7 @@ async function openSession(cwd, label, aiOverride) {
   const host = el('div', { class: `term-host${settings.italic ? ' term-italic' : ''}` });
 
   const term = new Terminal({
-    theme: TERM_THEME,
+    theme: termTheme(),
     fontFamily: 'SF Mono, ui-monospace, Menlo, Monaco, monospace',
     fontSize: settings.fontSize,
     fontWeight: settings.bold ? 'bold' : 'normal',
@@ -797,33 +966,40 @@ async function openSession(cwd, label, aiOverride) {
   });
 
   const session = {
-    id, term, fit, host, pane, cwd, ai, aiName, label,
+    id, kind: 'term', term, fit, host, pane, cwd, ai, aiName, label,
     composerText: composer.textarea,
     status: 'busy', unread: false, tabEl: null,
   };
   sessions.set(id, session);
+  attachTab(session, { tag: shortAi(aiName), tagClass: 'tab-ai', tabTitle: cwd });
 
-  const tab = el('div', { class: 'tab', 'data-id': id, title: cwd },
+  welcomeEl.classList.add('hidden');
+  activate(id);
+  fitAndResize(session);
+  persistSession();
+  return id;
+}
+
+// Build the tab for a session (terminal, editor, or diff) and wire click /
+// close / double-click-rename. Shared so every pane gets identical behaviour.
+function attachTab(session, { tag, tagClass = 'tab-ai', tabTitle = '' } = {}) {
+  const tab = el('div', { class: `tab${session.kind !== 'term' ? ' ' + session.kind : ''}`, 'data-id': session.id, title: tabTitle },
     el('span', { class: 'tab-status' }),
-    el('span', { class: 'tab-title', text: label }),
-    el('span', { class: 'tab-ai', text: shortAi(aiName) }),
+    el('span', { class: 'tab-title', text: session.label }),
+    el('span', { class: tagClass, text: tag }),
     el('span', { class: 'tab-close', text: '×' })
   );
   tab.addEventListener('click', (e) => {
-    if (e.target.classList.contains('tab-close')) { closeSession(id); return; }
-    activate(id);
+    if (e.target.classList.contains('tab-close')) { closeSession(session.id); return; }
+    activate(session.id);
   });
   const titleEl = tab.querySelector('.tab-title');
   titleEl.title = 'Double-click to rename';
   titleEl.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename(titleEl, session); });
   session.tabEl = tab;
   tabbar.appendChild(tab);
-  tabbar.appendChild(newTermBtn); // keep the "+" at the end of the strip
-
-  welcomeEl.classList.add('hidden');
-  activate(id);
-  fitAndResize(session);
-  return id;
+  appendTabControls(); // keep "+" and split at the end of the strip
+  return tab;
 }
 
 function shortAi(name) {
@@ -831,6 +1007,8 @@ function shortAi(name) {
 }
 
 function activate(id) {
+  // In split view, clicking the secondary's tab swaps it to the primary side.
+  if (splitId && id === splitId) splitId = activeId;
   activeId = id;
   for (const [sid, s] of sessions) {
     const on = sid === id;
@@ -838,8 +1016,37 @@ function activate(id) {
     s.tabEl.classList.toggle('active', on);
     if (on) { s.unread = false; s.tabEl.classList.remove('unread'); }
   }
+  applySplitClasses();
   const s = sessions.get(id);
-  if (s) { fitAndResize(s); s.composerText.focus(); }
+  if (s) {
+    if (s.composerText) s.composerText.focus();
+    else if (s.focusEl) s.focusEl.focus();
+  }
+}
+
+// Toggle split with the most-recently-used other terminal.
+function toggleSplit() {
+  if (splitId) { splitId = null; applySplitClasses(); return; }
+  const other = [...sessions.keys()].filter((sid) => sid !== activeId && sessions.get(sid).kind === 'term').pop();
+  if (!other) { showToast('Open another terminal to split the view.'); return; }
+  splitId = other;
+  applySplitClasses();
+}
+
+// Apply/clear the side-by-side layout classes and refit both panes.
+function applySplitClasses() {
+  for (const s of sessions.values()) s.pane.classList.remove('split-2');
+  const valid = splitId && sessions.has(splitId) && splitId !== activeId;
+  if (!valid) { splitId = null; terminalsEl.classList.remove('split'); }
+  else {
+    terminalsEl.classList.add('split');
+    const sec = sessions.get(splitId);
+    sec.pane.classList.add('split-2');
+    if (sec.fit) fitAndResize(sec);
+  }
+  splitBtn.classList.toggle('on', !!splitId);
+  const a = sessions.get(activeId);
+  if (a && a.fit) fitAndResize(a);
 }
 
 function fitAndResize(s) {
@@ -854,18 +1061,20 @@ function fitAndResize(s) {
 function closeSession(id) {
   const s = sessions.get(id);
   if (!s) return;
-  // Guard against killing a session that's actively running something.
-  if (s.status === 'busy' && !confirm(`"${s.label}" is still running. Close it and stop the process?`)) return;
-  window.gits.ptyKill(id);
-  s.term.dispose();
+  // Guard against losing work: a running process, or an editor with unsaved edits.
+  if (s.kind === 'term' && s.status === 'busy' && !confirm(`"${s.label}" is still running. Close it and stop the process?`)) return;
+  if (s.kind === 'editor' && s.dirty && !confirm(`"${s.label}" has unsaved changes. Close without saving?`)) return;
+  if (s.kind === 'term') { window.gits.ptyKill(id); if (s.term) s.term.dispose(); }
   s.pane.remove();
   s.tabEl.remove();
   sessions.delete(id);
+  if (id === splitId) { splitId = null; terminalsEl.classList.remove('split'); }
   if (activeId === id) {
     const next = [...sessions.keys()].pop();
     if (next) activate(next);
     else { activeId = null; welcomeEl.classList.remove('hidden'); }
   }
+  persistSession();
 }
 
 // Inline-rename a tab: double-click the title to edit, Enter to save, Esc to cancel.
@@ -905,6 +1114,113 @@ function setStatus(id, status) {
   s.status = status;
   s.tabEl.classList.remove('busy', 'idle', 'dead');
   s.tabEl.classList.add(status);
+}
+
+// ---------------------------------------------------------------------------
+// Built-in editor — open a text file in a tab, edit, save (Cmd/Ctrl+S).
+// ---------------------------------------------------------------------------
+let editorSeq = 0;
+async function openEditor(filePath) {
+  // Already open? Just focus that tab.
+  for (const [sid, s] of sessions) {
+    if (s.kind === 'editor' && s.filePath === filePath) { activate(sid); return sid; }
+  }
+  const res = await window.gits.readFile(filePath);
+  if (!res.ok) {
+    if (res.tooLarge || res.binary) { window.gits.openItem(filePath); showToast(`${res.error} Opened in your default app.`); }
+    else showToast(res.error || 'Could not open the file.');
+    return null;
+  }
+  const id = `e${++editorSeq}`;
+  const label = basename(filePath);
+
+  const ta = el('textarea', { class: 'editor-text', spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off', autocomplete: 'off' });
+  ta.value = res.content;
+  const saveBtn = el('button', { class: 'send-btn', text: 'Save', disabled: 'true' });
+  const bar = el('div', { class: 'editor-bar' }, el('span', { class: 'editor-info', text: filePath }), saveBtn);
+  const pane = el('div', { class: 'term-pane editor-pane', 'data-id': id }, ta, bar);
+  terminalsEl.appendChild(pane);
+
+  const session = { id, kind: 'editor', filePath, label, pane, focusEl: ta, textarea: ta, dirty: false, tabEl: null };
+  sessions.set(id, session);
+
+  const markDirty = (d) => {
+    session.dirty = d;
+    if (session.tabEl) session.tabEl.classList.toggle('dirty', d);
+    saveBtn.disabled = !d;
+  };
+  const save = async () => {
+    const r = await window.gits.writeFile({ path: filePath, content: ta.value });
+    if (r.ok) { markDirty(false); showToast(`Saved ${label}`); }
+    else showToast(r.error || 'Could not save.');
+  };
+  ta.addEventListener('input', () => { if (!session.dirty) markDirty(true); });
+  ta.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); save(); }
+  });
+  saveBtn.addEventListener('click', save);
+
+  attachTab(session, { tag: 'edit', tagClass: 'tab-ai edit', tabTitle: filePath });
+  welcomeEl.classList.add('hidden');
+  activate(id);
+  persistSession();
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// Inline diff — open a read-only unified diff for a changed file in a tab.
+// ---------------------------------------------------------------------------
+let diffSeq = 0;
+async function openDiff(repo, filePath) {
+  const res = await window.gits.diff({ repo, file: filePath });
+  if (!res.ok) { showToast(res.error || 'Could not get the diff.'); return; }
+  if (res.empty) { showToast('No changes in this file.'); return; }
+  const id = `d${++diffSeq}`;
+  const pre = el('div', { class: 'diff-view', tabindex: '-1' });
+  for (const line of res.diff.split('\n')) {
+    let cls = 'd-ctx';
+    const c = line[0];
+    if (/^(diff |index |new file|deleted file|similarity|rename |\+\+\+|---)/.test(line)) cls = 'd-meta';
+    else if (line.startsWith('@@')) cls = 'd-hunk';
+    else if (c === '+') cls = 'd-add';
+    else if (c === '-') cls = 'd-del';
+    pre.appendChild(el('div', { class: `d-line ${cls}`, text: line || ' ' }));
+  }
+  const pane = el('div', { class: 'term-pane diff-pane', 'data-id': id }, pre);
+  terminalsEl.appendChild(pane);
+  const session = { id, kind: 'diff', pane, focusEl: pre, label: basename(filePath), tabEl: null };
+  sessions.set(id, session);
+  attachTab(session, { tag: 'diff', tagClass: 'tab-ai diff', tabTitle: filePath });
+  welcomeEl.classList.add('hidden');
+  activate(id);
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// Session persistence — remember terminal + editor tabs across relaunches.
+// ---------------------------------------------------------------------------
+let persistTimer = null;
+function persistSession() {
+  if (!settings.restoreTabs) return;
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    const tabs = [];
+    for (const s of sessions.values()) {
+      if (s.kind === 'term') tabs.push({ kind: 'term', cwd: s.cwd, ai: s.ai, label: s.label });
+      else if (s.kind === 'editor') tabs.push({ kind: 'editor', filePath: s.filePath });
+    }
+    window.gits.saveSession({ tabs });
+  }, 400);
+}
+
+async function restoreSession() {
+  if (!settings.restoreTabs) return;
+  const data = await window.gits.loadSession();
+  const tabs = (data && Array.isArray(data.tabs)) ? data.tabs : [];
+  for (const t of tabs) {
+    if (t.kind === 'term') await openSession(t.cwd, t.label || 'terminal', t.ai);
+    else if (t.kind === 'editor') await openEditor(t.filePath);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1063,7 +1379,26 @@ const syncFiles = document.getElementById('sync-files');
 const syncPull = document.getElementById('sync-pull');
 const syncGo = document.getElementById('sync-go');
 const syncStatus = document.getElementById('sync-status');
+const syncSuggest = document.getElementById('sync-suggest');
 let syncCtx = null;
+
+// Suggest a commit message from the pending changes (uses a local AI CLI if
+// present, else a name-based summary).
+syncSuggest.addEventListener('click', async () => {
+  if (!syncCtx) return;
+  syncSuggest.disabled = true;
+  const old = syncSuggest.textContent;
+  syncSuggest.textContent = 'Thinking…';
+  const r = await window.gits.commitMessage(syncCtx.path);
+  syncSuggest.textContent = old;
+  syncSuggest.disabled = false;
+  if (r.ok && r.message) {
+    syncMessage.value = r.message;
+    if (r.source === 'summary') showToast('Suggested from your changed files (no AI CLI detected).');
+  } else {
+    showToast(r.error || 'Could not suggest a message.');
+  }
+});
 
 async function openSync(p) {
   syncCtx = p;
@@ -1464,6 +1799,103 @@ document.getElementById('addai-go').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Auto-update — surface a new release and (on approval) download + hand off to
+// the installer. Nothing is downloaded or installed without an explicit click.
+// ---------------------------------------------------------------------------
+const updateModal = document.getElementById('update-modal');
+const updateTitle = document.getElementById('update-title');
+const updateSub = document.getElementById('update-sub');
+const updateNotes = document.getElementById('update-notes');
+const updateProgressWrap = document.getElementById('update-progress-wrap');
+const updateProgressBar = document.getElementById('update-progress-bar');
+const updateStatus = document.getElementById('update-status');
+const updateGo = document.getElementById('update-go');
+const updateLater = document.getElementById('update-later');
+let updateCtx = null;
+let updateChecking = false;
+
+// Always-visible version label in the sidebar footer. Click → check for updates.
+const versionLine = document.getElementById('app-version');
+window.gits.appVersion().then((v) => { versionLine.textContent = `Gitsidian ${v}`; });
+versionLine.addEventListener('click', () => checkForUpdates({ silent: false }));
+
+window.gits.onUpdateProgress(({ frac }) => {
+  updateProgressWrap.classList.remove('hidden');
+  updateProgressBar.style.width = `${Math.round((frac || 0) * 100)}%`;
+});
+
+// Check for a newer release. `silent` suppresses the "you're up to date" toast
+// (used by the automatic on-launch check).
+async function checkForUpdates({ silent = false } = {}) {
+  if (updateChecking) return;
+  updateChecking = true;
+  try {
+    const res = await window.gits.checkUpdate();
+    if (!res.ok) { if (!silent) showToast(res.error || 'Update check failed.'); return; }
+    if (!res.updateAvailable) {
+      versionLine.classList.remove('update');
+      versionLine.textContent = `Gitsidian ${res.current}`;
+      versionLine.title = 'Click to check for updates';
+      if (!silent) showToast(`You're on the latest version (${res.current}).`);
+      return;
+    }
+    // Flag the always-visible version line so a new release is noticeable.
+    versionLine.classList.add('update');
+    versionLine.textContent = `Update to ${res.latest} →`;
+    versionLine.title = `Version ${res.latest} is available (you have ${res.current})`;
+    updateCtx = res;
+    updateTitle.textContent = `Update available — ${res.latest}`;
+    updateSub.textContent = res.asset
+      ? `You have ${res.current}. Download and install ${res.latest}?`
+      : `You have ${res.current}. Open the releases page to download ${res.latest}.`;
+    updateNotes.textContent = (res.notes || '').trim().slice(0, 1500);
+    updateProgressWrap.classList.add('hidden');
+    updateProgressBar.style.width = '0%';
+    updateStatus.textContent = '';
+    updateStatus.className = 'import-status';
+    updateGo.textContent = res.asset ? 'Update now' : 'Open releases page';
+    updateGo.disabled = false;
+    updateLater.disabled = false;
+    settingsModal.classList.add('hidden'); // don't stack over the Settings dialog
+    updateModal.classList.remove('hidden');
+  } finally {
+    updateChecking = false;
+  }
+}
+
+updateLater.addEventListener('click', () => updateModal.classList.add('hidden'));
+updateGo.addEventListener('click', async () => {
+  if (!updateCtx) return;
+  // No installer for this platform → just open the releases page.
+  if (!updateCtx.asset) {
+    window.gits.openUrl(updateCtx.htmlUrl);
+    updateModal.classList.add('hidden');
+    return;
+  }
+  updateGo.disabled = true;
+  updateLater.disabled = true;
+  updateStatus.textContent = 'Downloading…';
+  updateStatus.className = 'import-status';
+  const dl = await window.gits.downloadUpdate(updateCtx.asset);
+  if (!dl.ok) {
+    updateStatus.textContent = dl.error || 'Download failed.';
+    updateStatus.className = 'import-status err';
+    updateGo.disabled = false;
+    updateLater.disabled = false;
+    return;
+  }
+  updateStatus.textContent = 'Opening the installer — Gitsidian will close so you can finish updating.';
+  updateStatus.className = 'import-status ok';
+  const ins = await window.gits.installUpdate(dl.path);
+  if (!ins.ok) {
+    updateStatus.textContent = ins.error || 'Could not open the installer.';
+    updateStatus.className = 'import-status err';
+    updateGo.disabled = false;
+    updateLater.disabled = false;
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Settings modal
 // ---------------------------------------------------------------------------
 const settingsModal = document.getElementById('settings-modal');
@@ -1498,6 +1930,27 @@ document.getElementById('open-settings').addEventListener('click', () => {
   const sb = document.getElementById('settings-scrollback');
   sb.value = String(settings.scrollback);
   sb.onchange = () => { settings.scrollback = parseInt(sb.value, 10); saveSettings(); }; // applies to new terminals
+  for (const r of document.getElementsByName('theme')) {
+    r.checked = r.value === settings.theme;
+    r.onchange = () => { if (r.checked) { settings.theme = r.value; saveSettings(); applyTheme(); } };
+  }
+  const restore = document.getElementById('settings-restore');
+  restore.checked = settings.restoreTabs;
+  restore.onchange = () => { settings.restoreTabs = restore.checked; saveSettings(); if (restore.checked) persistSession(); };
+  const auto = document.getElementById('settings-autoupdate');
+  auto.checked = settings.autoUpdate;
+  auto.onchange = () => { settings.autoUpdate = auto.checked; saveSettings(); };
+  const ver = document.getElementById('settings-version');
+  window.gits.appVersion().then((v) => { ver.textContent = `Current version ${v}`; });
+  const checkBtn = document.getElementById('settings-check-update');
+  checkBtn.onclick = async () => {
+    checkBtn.disabled = true;
+    const old = checkBtn.textContent;
+    checkBtn.textContent = 'Checking…';
+    await checkForUpdates({ silent: false });
+    checkBtn.textContent = old;
+    checkBtn.disabled = false;
+  };
   settingsModal.classList.remove('hidden');
 });
 document.getElementById('settings-close').addEventListener('click', () => settingsModal.classList.add('hidden'));
@@ -1509,8 +1962,23 @@ document.getElementById('settings-close').addEventListener('click', () => settin
   // Platform class drives OS-specific chrome (e.g. macOS traffic-light padding).
   const plat = window.gits.platform;
   document.body.classList.add(plat === 'darwin' ? 'plat-mac' : plat === 'win32' ? 'plat-win' : 'plat-other');
-  tabbar.appendChild(newTermBtn); // always present, even with no sessions
+  appendTabControls(); // "+" and split, always present even with no sessions
   await loadAis();
   await loadAccounts();
   await loadProjects({ fetch: false });
+  await restoreSession(); // reopen the tabs from last time (opt-out in Settings)
+  // Quietly check for a newer release shortly after launch (opt-out in Settings).
+  if (settings.autoUpdate) setTimeout(() => checkForUpdates({ silent: true }), 4000);
 })();
+
+// Persist open tabs as the window closes (a final flush on top of the
+// debounced saves that run on every open/close).
+window.addEventListener('beforeunload', () => {
+  if (!settings.restoreTabs) return;
+  const tabs = [];
+  for (const s of sessions.values()) {
+    if (s.kind === 'term') tabs.push({ kind: 'term', cwd: s.cwd, ai: s.ai, label: s.label });
+    else if (s.kind === 'editor') tabs.push({ kind: 'editor', filePath: s.filePath });
+  }
+  window.gits.saveSession({ tabs });
+});

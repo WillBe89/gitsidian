@@ -2,6 +2,36 @@
 
 All notable changes to Gitsidian.
 
+## 0.5.0
+
+A big release — Gitsidian gains a built-in editor, file management, richer git,
+and quality-of-life touches.
+
+- **Built-in editor** — click a text file to open and edit it in a tab; save with
+  ⌘S/Ctrl+S. Large or binary files still open in your default app.
+- **File management in the tree** — right-click to create files/folders, rename,
+  or delete (to the Trash). Plus "Open in default app".
+- **Inline diff** — changed files show a `±` button (and a right-click option) to
+  view exactly what changed, with added/removed lines highlighted.
+- **Branch switcher** — each project shows its current branch; click to switch or
+  create a branch.
+- **Suggested commit messages** — in the Sync dialog, "✦ Suggest" writes a commit
+  message from your changes (uses a local AI CLI if you have one, otherwise a
+  tidy file-based summary).
+- **Session persistence** — your open terminal and editor tabs reopen on relaunch
+  (toggle in Settings).
+- **Light theme** — pick Dark or Light in Settings; terminals follow.
+- **Paste an image** — paste a screenshot into the composer and it's saved into
+  the project folder, with the path inserted for you.
+- **Split view** — show two terminals side by side (⊟ in the tab strip).
+- **Auto-update** — Gitsidian checks GitHub for new releases and, with your
+  approval, downloads and launches the installer. Current version shows in the
+  sidebar and Settings.
+- **Linux packaging** — AppImage and `.deb` builds now ship alongside macOS and
+  Windows.
+- **Code signing / notarization scaffolding** — build is ready to sign + notarize
+  the moment an Apple Developer ID is configured (still unsigned for now).
+
 ## 0.4.8
 
 - **Mark as ignore** — right-click a file/folder in the tree → Add to .gitignore

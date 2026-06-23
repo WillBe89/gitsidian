@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
+const https = require('https');
 
 // Pin the app name so user data (added projects, settings) always lives under
 // ".../Application Support/Gitsidian" — not the dev-mode default of "Electron".
@@ -873,6 +874,344 @@ ipcMain.handle('gh:accounts', async () => {
 ipcMain.handle('gh:switch', async (_e, login) => {
   const r = await run('gh', ['auth', 'switch', '--hostname', 'github.com', '--user', login]);
   if (r.err) return { ok: false, error: r.stderr || r.stdout || 'Switch failed.' };
+  return { ok: true };
+});
+
+// ===========================================================================
+// File operations — read/write for the built-in editor, plus create / rename /
+// delete (to Trash) for the file tree. All paths are validated as absolute.
+// ===========================================================================
+
+const MAX_EDIT_BYTES = 2 * 1024 * 1024; // 2 MB — beyond this we don't open in-app.
+
+// Does a buffer look binary? (NUL byte in the first chunk is a strong signal.)
+function looksBinary(buf) {
+  const n = Math.min(buf.length, 8000);
+  for (let i = 0; i < n; i++) if (buf[i] === 0) return true;
+  return false;
+}
+
+ipcMain.handle('fs:read', (_e, p) => {
+  try {
+    const abs = expandHome(p);
+    const st = fs.statSync(abs);
+    if (st.isDirectory()) return { ok: false, error: 'That is a folder.' };
+    if (st.size > MAX_EDIT_BYTES) return { ok: false, tooLarge: true, error: 'File is larger than 2 MB — open it in your editor instead.' };
+    const buf = fs.readFileSync(abs);
+    if (looksBinary(buf)) return { ok: false, binary: true, error: 'This looks like a binary file.' };
+    return { ok: true, content: buf.toString('utf8'), size: st.size };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Could not read the file.' };
+  }
+});
+
+ipcMain.handle('fs:write', (_e, { path: p, content } = {}) => {
+  try {
+    fs.writeFileSync(expandHome(p), content != null ? String(content) : '');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Could not save the file.' };
+  }
+});
+
+// Create a file or folder named `name` inside `parent`. Refuses to clobber.
+ipcMain.handle('fs:create', (_e, { parent, name, isDir } = {}) => {
+  try {
+    const safe = String(name || '').trim();
+    if (!safe || safe.includes('/') || safe.includes('\\') || safe === '.' || safe === '..') {
+      return { ok: false, error: 'Enter a valid name (no slashes).' };
+    }
+    const target = path.join(expandHome(parent), safe);
+    if (fs.existsSync(target)) return { ok: false, error: `"${safe}" already exists.` };
+    if (isDir) fs.mkdirSync(target);
+    else fs.writeFileSync(target, '');
+    return { ok: true, path: target };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Could not create that.' };
+  }
+});
+
+// Rename a file/folder in place (same parent directory).
+ipcMain.handle('fs:rename', (_e, { path: p, newName } = {}) => {
+  try {
+    const abs = expandHome(p);
+    const safe = String(newName || '').trim();
+    if (!safe || safe.includes('/') || safe.includes('\\') || safe === '.' || safe === '..') {
+      return { ok: false, error: 'Enter a valid name (no slashes).' };
+    }
+    const target = path.join(path.dirname(abs), safe);
+    if (target === abs) return { ok: true, path: target };
+    if (fs.existsSync(target)) return { ok: false, error: `"${safe}" already exists.` };
+    fs.renameSync(abs, target);
+    return { ok: true, path: target };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Could not rename.' };
+  }
+});
+
+// Delete to the OS Trash (recoverable) rather than permanently.
+ipcMain.handle('fs:delete', async (_e, p) => {
+  try {
+    await shell.trashItem(expandHome(p));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Could not delete.' };
+  }
+});
+
+// Save a pasted image (base64) into `dir`, return the new file's path.
+ipcMain.handle('fs:saveImage', (_e, { dir, base64, ext } = {}) => {
+  try {
+    const safeExt = /^[a-z0-9]{1,5}$/i.test(ext || '') ? ext : 'png';
+    const folder = expandHome(dir) && fs.existsSync(expandHome(dir)) ? expandHome(dir) : app.getPath('temp');
+    let name, target, i = 0;
+    do { name = `pasted-image${i ? '-' + i : ''}.${safeExt}`; target = path.join(folder, name); i++; }
+    while (fs.existsSync(target) && i < 1000);
+    fs.writeFileSync(target, Buffer.from(base64, 'base64'));
+    return { ok: true, path: target };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Could not save the image.' };
+  }
+});
+
+// ===========================================================================
+// Git: inline diff, branch list / switch, AI-suggested commit messages
+// ===========================================================================
+
+// Unified diff for one file vs HEAD. Handles untracked files (shows them as
+// all-added) so "new" files preview too.
+ipcMain.handle('git:diff', async (_e, { repo, file } = {}) => {
+  const repoAbs = expandHome(repo);
+  const rel = path.relative(repoAbs, expandHome(file));
+  if (!rel || rel.startsWith('..')) return { ok: false, error: 'That file is outside the project.' };
+  const tracked = !(await git(repoAbs, ['ls-files', '--error-unmatch', rel])).err;
+  let diff;
+  if (tracked) {
+    diff = await git(repoAbs, ['diff', 'HEAD', '--', rel]);
+  } else {
+    // Untracked: diff against an empty tree so the whole file shows as added.
+    diff = await git(repoAbs, ['diff', '--no-index', '--', process.platform === 'win32' ? 'NUL' : '/dev/null', rel]);
+  }
+  const text = (diff.stdout || '').trim();
+  return { ok: true, diff: text, empty: !text, rel };
+});
+
+ipcMain.handle('git:branches', async (_e, p) => {
+  const repo = expandHome(p);
+  if (!fs.existsSync(path.join(repo, '.git'))) return { ok: false, error: 'Not a git repo.' };
+  const cur = (await git(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
+  const r = await git(repo, ['for-each-ref', '--format=%(refname:short)', '--sort=-committerdate', 'refs/heads']);
+  const branches = r.err ? [] : r.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+  return { ok: true, current: cur, branches };
+});
+
+ipcMain.handle('git:checkout', async (_e, { repo, branch, create } = {}) => {
+  const r = expandHome(repo);
+  const name = String(branch || '').trim();
+  if (!name) return { ok: false, error: 'Enter a branch name.' };
+  const args = create ? ['checkout', '-b', name] : ['checkout', name];
+  const res = await git(r, args);
+  if (res.err) {
+    const out = (res.stderr || res.stdout || '').trim();
+    if (/already exists/i.test(out)) return { ok: false, error: `Branch "${name}" already exists.` };
+    if (/local changes|would be overwritten/i.test(out)) {
+      return { ok: false, error: 'You have uncommitted changes that conflict — commit or stash them first.' };
+    }
+    return { ok: false, error: out || 'Checkout failed.' };
+  }
+  return { ok: true, branch: name };
+});
+
+// Suggest a commit message from the pending changes. Prefers a local AI CLI
+// (Claude Code's non-interactive `-p`); falls back to a name-based summary so
+// it always returns something useful even with no AI installed.
+function summarizeChanges(nameStatus) {
+  const lines = nameStatus.split('\n').map((l) => l.trim()).filter(Boolean);
+  const files = lines.map((l) => l.split('\t').pop());
+  if (!files.length) return 'Update project';
+  const verbBy = { A: 'Add', M: 'Update', D: 'Remove', R: 'Rename' };
+  const first = lines[0].split('\t');
+  const verb = verbBy[first[0][0]] || 'Update';
+  const head = files[0];
+  if (files.length === 1) return `${verb} ${head}`;
+  return `${verb} ${head} and ${files.length - 1} other file${files.length - 1 === 1 ? '' : 's'}`;
+}
+
+ipcMain.handle('ai:commitMessage', async (_e, p) => {
+  const repo = expandHome(p);
+  await git(repo, ['add', '-A']); // stage so new files are included in the diff/summary
+  const ns = await git(repo, ['diff', '--cached', '--name-status']);
+  const nameStatus = (ns.stdout || '').trim();
+  if (!nameStatus) return { ok: false, error: 'Nothing to commit.' };
+  const fallback = summarizeChanges(nameStatus);
+
+  const claude = await whichBin('claude');
+  if (!claude) return { ok: true, message: fallback, source: 'summary' };
+
+  const diff = (await git(repo, ['diff', '--cached', '--stat'])).stdout
+    + '\n\n' + (await git(repo, ['diff', '--cached'])).stdout.slice(0, 6000);
+  const prompt = 'Write a concise git commit message (one line, imperative mood, under 72 chars, '
+    + 'no quotes, no trailing period) for these staged changes:\n\n' + diff;
+  const res = await run(claude, ['-p', prompt], { cwd: repo, timeout: 30000 });
+  const out = (res.stdout || '').trim().split('\n').map((s) => s.trim()).filter(Boolean)[0];
+  if (res.err || !out) return { ok: true, message: fallback, source: 'summary' };
+  return { ok: true, message: out.replace(/^["'`]|["'`]$/g, '').slice(0, 120), source: 'ai' };
+});
+
+// ===========================================================================
+// Session persistence — remember open tabs across relaunches.
+// ===========================================================================
+function sessionFile() { return path.join(app.getPath('userData'), 'session.json'); }
+ipcMain.handle('session:save', (_e, data) => {
+  try {
+    fs.mkdirSync(path.dirname(sessionFile()), { recursive: true });
+    fs.writeFileSync(sessionFile(), JSON.stringify(data || {}, null, 2));
+    return true;
+  } catch { return false; }
+});
+ipcMain.handle('session:load', () => {
+  try { return JSON.parse(fs.readFileSync(sessionFile(), 'utf8')); }
+  catch { return { tabs: [] }; }
+});
+
+// ===========================================================================
+// Auto-update — check GitHub Releases, download with approval, hand off to the
+// installer.
+// ===========================================================================
+// The builds are ad-hoc signed (not notarized / not Windows-signed), so we
+// can't use Squirrel's silent in-place update — it verifies signatures and
+// would reject these artifacts. Instead we fetch the latest release, and *only
+// on explicit user approval* download the right installer and open it (mounts
+// the .dmg on macOS, runs the NSIS setup on Windows). That automates the same
+// manual re-download flow people do today. (When signing/notarization lands,
+// this can be swapped for electron-updater for true in-place updates.)
+
+const UPDATE_REPO = 'willbe89/gitsidian'; // owner/repo for the Releases API
+
+// GET JSON from a URL, following redirects. GitHub requires a User-Agent.
+function httpsGetJson(url, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirects > 5) return reject(new Error('Too many redirects'));
+    const req = https.get(url, {
+      headers: { 'User-Agent': 'Gitsidian-Updater', Accept: 'application/vnd.github+json' },
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return resolve(httpsGetJson(res.headers.location, redirects + 1));
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`GitHub returned HTTP ${res.statusCode}`)); }
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (d) => { body += d; });
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(new Error('Bad response from GitHub.')); } });
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => req.destroy(new Error('Update check timed out.')));
+  });
+}
+
+// Parse "v1.2.3" / "1.2.3" → [1,2,3] (ignores any -prerelease suffix).
+function parseVer(v) {
+  return String(v || '').replace(/^v/, '').split('-')[0].split('.').map((n) => parseInt(n, 10) || 0);
+}
+// Is version a strictly newer than b? (major.minor.patch compare)
+function isNewer(a, b) {
+  const x = parseVer(a), y = parseVer(b);
+  for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }
+  return false;
+}
+
+// Choose the release asset matching this platform + CPU arch.
+function pickAsset(assets = []) {
+  const arch = process.arch; // 'arm64' | 'x64'
+  if (process.platform === 'darwin') {
+    const dmgs = assets.filter((a) => /\.dmg$/i.test(a.name));
+    if (arch === 'arm64') return dmgs.find((a) => /arm64/i.test(a.name)) || dmgs[0] || null;
+    return dmgs.find((a) => /(x64|intel)/i.test(a.name)) || dmgs.find((a) => !/arm64/i.test(a.name)) || dmgs[0] || null;
+  }
+  if (process.platform === 'win32') {
+    const exes = assets.filter((a) => /\.exe$/i.test(a.name));
+    return exes.find((a) => new RegExp(arch, 'i').test(a.name)) || exes[0] || null;
+  }
+  return null; // Linux not packaged yet → caller falls back to the releases page.
+}
+
+async function checkForUpdate() {
+  const data = await httpsGetJson(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`);
+  const latest = (data.tag_name || '').replace(/^v/, '');
+  const current = app.getVersion();
+  const asset = pickAsset(data.assets || []);
+  return {
+    current,
+    latest,
+    updateAvailable: !!latest && isNewer(latest, current),
+    notes: data.body || '',
+    htmlUrl: data.html_url || `https://github.com/${UPDATE_REPO}/releases/latest`,
+    name: data.name || data.tag_name || '',
+    asset: asset ? { name: asset.name, url: asset.browser_download_url, size: asset.size } : null,
+  };
+}
+
+// Stream a URL to a file, following redirects (GitHub asset URLs redirect to a
+// signed objects host). Reports fractional progress when a length is known.
+function downloadToFile(url, destPath, onProgress, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirects > 5) return reject(new Error('Too many redirects'));
+    const req = https.get(url, { headers: { 'User-Agent': 'Gitsidian-Updater' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return resolve(downloadToFile(res.headers.location, destPath, onProgress, redirects + 1));
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`Download failed (HTTP ${res.statusCode}).`)); }
+      const total = parseInt(res.headers['content-length'] || '0', 10);
+      let received = 0;
+      const file = fs.createWriteStream(destPath);
+      file.on('error', (e) => { try { fs.unlinkSync(destPath); } catch {} reject(e); });
+      res.on('data', (chunk) => {
+        received += chunk.length;
+        if (onProgress) onProgress(total ? received / total : 0, received, total);
+      });
+      res.pipe(file);
+      file.on('finish', () => file.close(() => resolve(destPath)));
+    });
+    req.on('error', reject);
+    req.setTimeout(120000, () => req.destroy(new Error('Download timed out.')));
+  });
+}
+
+ipcMain.handle('app:version', () => app.getVersion());
+
+ipcMain.handle('update:check', async () => {
+  try { return { ok: true, ...(await checkForUpdate()) }; }
+  catch (e) { return { ok: false, error: e.message || 'Update check failed.' }; }
+});
+
+ipcMain.handle('update:download', async (e, asset) => {
+  if (!asset || !asset.url) return { ok: false, error: 'No installer is published for this platform.' };
+  const win = BrowserWindow.fromWebContents(e.sender);
+  // Sanitize the asset name to a bare filename before joining into temp.
+  const dest = path.join(app.getPath('temp'), path.basename(asset.name || 'gitsidian-update'));
+  let lastSent = 0;
+  try {
+    await downloadToFile(asset.url, dest, (frac) => {
+      // Throttle progress events a little to avoid flooding the renderer.
+      const pct = Math.round(frac * 100);
+      if (pct !== lastSent) { lastSent = pct; emit(win, 'update:progress', { frac }); }
+    });
+    return { ok: true, path: dest };
+  } catch (err) {
+    try { fs.unlinkSync(dest); } catch {}
+    return { ok: false, error: err.message || 'Download failed.' };
+  }
+});
+
+ipcMain.handle('update:install', async (_e, filePath) => {
+  if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: 'Installer not found — try downloading again.' };
+  // Open the installer: macOS mounts the .dmg in Finder; Windows runs the NSIS
+  // setup. Then quit so the user can replace the running copy.
+  const errMsg = await shell.openPath(filePath); // returns '' on success, else an error string
+  if (errMsg) return { ok: false, error: errMsg };
+  setTimeout(() => app.quit(), 1000);
   return { ok: true };
 });
 
