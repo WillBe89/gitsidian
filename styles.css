@@ -369,6 +369,7 @@ body.plat-mac .titlebar { padding-left: 80px; } /* clear the macOS traffic light
   font-weight: 700; font-size: 14px; pointer-events: none; z-index: 5;
 }
 .term-host { flex: 1; min-height: 0; width: 100%; padding: 8px 10px 4px; }
+.term-host.term-italic .xterm-rows, .term-host.term-italic .xterm-rows span { font-style: italic; }
 
 /* Friendly composer bar -------------------------------------------------- */
 .composer {

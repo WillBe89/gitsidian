@@ -123,6 +123,8 @@ function loadSettings() {
     accent: ACCENTS[s.accent] ? s.accent : 'crimson',
     fontSize: typeof s.fontSize === 'number' ? s.fontSize : 12.5,
     scrollback: typeof s.scrollback === 'number' ? s.scrollback : 5000,
+    bold: !!s.bold,
+    italic: !!s.italic,
     defaultAi: s.defaultAi || null,
   };
 }
@@ -136,6 +138,15 @@ function applyAccent() {
 function applyFontSize() {
   for (const s of sessions.values()) {
     try { s.term.options.fontSize = settings.fontSize; s.fit.fit(); window.gits.ptyResize(s.id, s.term.cols, s.term.rows); } catch {}
+  }
+}
+function applyFontStyle() {
+  for (const s of sessions.values()) {
+    try {
+      s.term.options.fontWeight = settings.bold ? 'bold' : 'normal';
+      s.host.classList.toggle('term-italic', settings.italic);
+      s.fit.fit();
+    } catch {}
   }
 }
 applyAccent();
@@ -752,12 +763,13 @@ async function openSession(cwd, label, aiOverride) {
   const info = await window.gits.ptyCreate({ cwd, ai });
   const { id, aiName } = info;
 
-  const host = el('div', { class: 'term-host' });
+  const host = el('div', { class: `term-host${settings.italic ? ' term-italic' : ''}` });
 
   const term = new Terminal({
     theme: TERM_THEME,
     fontFamily: 'SF Mono, ui-monospace, Menlo, Monaco, monospace',
     fontSize: settings.fontSize,
+    fontWeight: settings.bold ? 'bold' : 'normal',
     cursorBlink: true,
     allowProposedApi: true,
     scrollback: settings.scrollback,
@@ -1477,6 +1489,12 @@ document.getElementById('open-settings').addEventListener('click', () => {
     fontVal.textContent = `${settings.fontSize}px`;
     saveSettings(); applyFontSize();
   };
+  const bold = document.getElementById('settings-bold');
+  bold.checked = settings.bold;
+  bold.onchange = () => { settings.bold = bold.checked; saveSettings(); applyFontStyle(); };
+  const italic = document.getElementById('settings-italic');
+  italic.checked = settings.italic;
+  italic.onchange = () => { settings.italic = italic.checked; saveSettings(); applyFontStyle(); };
   const sb = document.getElementById('settings-scrollback');
   sb.value = String(settings.scrollback);
   sb.onchange = () => { settings.scrollback = parseInt(sb.value, 10); saveSettings(); }; // applies to new terminals
