@@ -86,6 +86,24 @@ function el(tag, attrs = {}, ...children) {
 
 function basename(p) { return p.replace(/\/+$/, '').split('/').pop(); }
 
+// Minimal right-click context menu.
+let ctxMenuEl = null;
+function hideContextMenu() { if (ctxMenuEl) { ctxMenuEl.remove(); ctxMenuEl = null; } }
+function showContextMenu(x, y, items) {
+  hideContextMenu();
+  ctxMenuEl = el('div', { class: 'ctx-menu' });
+  for (const it of items) {
+    const mi = el('div', { class: 'ctx-item', text: it.label });
+    mi.addEventListener('click', () => { hideContextMenu(); it.onClick(); });
+    ctxMenuEl.appendChild(mi);
+  }
+  document.body.appendChild(ctxMenuEl);
+  ctxMenuEl.style.left = Math.min(x, window.innerWidth - 220) + 'px';
+  ctxMenuEl.style.top = Math.min(y, window.innerHeight - (items.length * 32 + 12)) + 'px';
+}
+document.addEventListener('click', hideContextMenu);
+window.addEventListener('blur', hideContextMenu);
+
 // ---------------------------------------------------------------------------
 // AI picker
 // ---------------------------------------------------------------------------
@@ -479,6 +497,25 @@ function changeClass(p, isDir, changes) {
   return '';
 }
 
+// Right-click menu for a tree row: ignore / reveal.
+function treeContextMenu(row, entry) {
+  row.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const root = row.closest('.tree') && row.closest('.tree').dataset.path;
+    const items = [];
+    if (root) items.push({
+      label: 'Add to .gitignore',
+      onClick: async () => {
+        const r = await window.gits.ignore({ repo: root, target: entry.path });
+        showToast(r.ok ? `Added "${entry.name}" to .gitignore` : (r.error || 'Could not ignore.'));
+      },
+    });
+    items.push({ label: 'Reveal in Finder', onClick: () => window.gits.reveal(entry.path) });
+    showContextMenu(e.clientX, e.clientY, items);
+  });
+}
+
 function treeNode(entry, depth, changes) {
   const pad = depth * 14 + 8;
   const cc = changeClass(entry.path, entry.isDir, changes);
@@ -495,6 +532,7 @@ function treeNode(entry, depth, changes) {
       item.classList.toggle('open');
       if (opening && kids.dataset.loaded === '0') await loadChildren(kids, entry.path, depth + 1, changes);
     });
+    treeContextMenu(row, entry);
     item.append(row, kids);
     return item;
   }
@@ -507,6 +545,7 @@ function treeNode(entry, depth, changes) {
   );
   row.addEventListener('click', () => window.gits.openItem(entry.path));
   row.querySelector('.reveal').addEventListener('click', (e) => { e.stopPropagation(); window.gits.reveal(entry.path); });
+  treeContextMenu(row, entry);
   return row;
 }
 

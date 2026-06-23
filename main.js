@@ -460,6 +460,32 @@ ipcMain.handle('git:changes', async (_e, p) => {
   return { files, dirs: [...dirSet] };
 });
 
+// Add a path to the repo's .gitignore (and untrack it if it was tracked).
+ipcMain.handle('git:ignore', async (_e, { repo, target } = {}) => {
+  const repoAbs = expandHome(repo);
+  const targetAbs = expandHome(target);
+  let rel = path.relative(repoAbs, targetAbs);
+  if (!rel || rel.startsWith('..')) return { ok: false, error: 'That path is outside the project.' };
+  let isDir = false;
+  try { isDir = fs.statSync(targetAbs).isDirectory(); } catch {}
+  const entry = isDir ? `${rel.replace(/\/+$/, '')}/` : rel;
+
+  const gi = path.join(repoAbs, '.gitignore');
+  let lines = [];
+  try { lines = fs.readFileSync(gi, 'utf8').split('\n'); } catch {}
+  if (!lines.map((l) => l.trim()).includes(entry)) {
+    let content = lines.join('\n');
+    if (content && !content.endsWith('\n')) content += '\n';
+    fs.writeFileSync(gi, content + entry + '\n');
+  }
+  // If it's currently tracked, untrack it so the ignore takes effect.
+  if (fs.existsSync(path.join(repoAbs, '.git'))) {
+    const tracked = !(await git(repoAbs, ['ls-files', '--error-unmatch', rel])).err;
+    if (tracked) await git(repoAbs, ['rm', '--cached', '-r', '--quiet', '--', rel]);
+  }
+  return { ok: true, entry };
+});
+
 // Immediate children of a directory, for lazy file-tree expansion.
 // Dotfiles are hidden; directories sort before files.
 ipcMain.handle('fs:list', (_e, dirPath) => {
