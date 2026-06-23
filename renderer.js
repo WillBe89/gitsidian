@@ -171,7 +171,7 @@ function badgeTitle(actions) {
 // involving a push (or both) opens the Sync dialog where you can do either.
 function handleBadge(p, actions) {
   if (actions.includes('publish')) return openPublish(p);
-  if (actions.length === 1 && actions[0] === 'pull') return doPull(p);
+  if (actions.length === 1 && actions[0] === 'pull') return openPullPreview(p);
   return openSync(p);
 }
 
@@ -1091,6 +1091,57 @@ async function doPull(p) {
     showToast(res.error || 'Pull failed.');
   }
 }
+
+// Pull preview: show incoming files + size before pulling.
+function humanBytes(n) {
+  if (!n) return '0 B';
+  const u = ['B', 'KB', 'MB', 'GB'];
+  let i = 0; let v = n;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${u[i]}`;
+}
+const pullModal = document.getElementById('pull-modal');
+const pullSummary = document.getElementById('pull-summary');
+const pullFiles = document.getElementById('pull-files');
+const pullStatus = document.getElementById('pull-status');
+const pullGo = document.getElementById('pull-go');
+let pullCtx = null;
+
+async function openPullPreview(p) {
+  pullCtx = p;
+  pullModal.classList.remove('hidden');
+  pullSummary.textContent = 'Checking GitHub for changes…';
+  pullFiles.textContent = '';
+  pullStatus.textContent = '';
+  pullStatus.className = 'import-status';
+  pullGo.disabled = true;
+  const pre = await window.gits.pullPreview(p.path);
+  if (!pre.ok) { pullSummary.textContent = pre.error || 'Could not check.'; return; }
+  if (!pre.behind) { pullSummary.textContent = `"${p.name}" is already up to date.`; return; }
+  const icon = (s) => (s === 'A' ? '+' : s === 'D' ? '−' : s === 'R' ? '→' : '~');
+  const shown = pre.files.slice(0, 60).map((f) => `${icon(f.status)} ${f.file}${f.size ? `  (${humanBytes(f.size)})` : ''}`).join('\n');
+  const more = pre.truncated || pre.files.length > 60 ? `\n…and more` : '';
+  pullFiles.textContent = shown + more;
+  pullSummary.innerHTML = `<b>${pre.behind}</b> commit${pre.behind === 1 ? '' : 's'} · <b>${pre.files.length}</b> file${pre.files.length === 1 ? '' : 's'} · about <b>${humanBytes(pre.bytes)}</b> will update in this folder.`;
+  pullGo.disabled = false;
+}
+
+document.getElementById('pull-cancel').addEventListener('click', () => pullModal.classList.add('hidden'));
+pullGo.addEventListener('click', async () => {
+  pullGo.disabled = true;
+  pullStatus.textContent = 'Pulling…';
+  pullStatus.className = 'import-status';
+  const res = await window.gits.pull(pullCtx.path);
+  if (res.ok) {
+    pullStatus.textContent = 'Pulled ✓';
+    pullStatus.className = 'import-status ok';
+    await loadProjects({ fetch: true });
+    setTimeout(() => pullModal.classList.add('hidden'), 1000);
+  } else {
+    pullStatus.textContent = res.error || 'Pull failed.';
+    pullStatus.className = 'import-status err';
+  }
+});
 
 document.getElementById('sync-cancel').addEventListener('click', () => syncModal.classList.add('hidden'));
 syncPull.addEventListener('click', async () => {

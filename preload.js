@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('gits', {
   repoInfo: (p) => ipcRenderer.invoke('git:repoInfo', p),
   sync: (opts) => ipcRenderer.invoke('git:sync', opts),
   pull: (p) => ipcRenderer.invoke('git:pull', p),
+  pullPreview: (p) => ipcRenderer.invoke('git:pullPreview', p),
 
   // GitHub accounts
   ghAccounts: () => ipcRenderer.invoke('gh:accounts'),

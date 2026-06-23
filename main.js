@@ -626,6 +626,38 @@ ipcMain.handle('git:repoInfo', async (_e, p) => {
 
 // Pull the latest from GitHub. Fast-forward only, so it never creates a merge
 // commit or clobbers local work — if it can't cleanly update, it says why.
+// Preview what a pull would bring: incoming commit count, changed files, and an
+// approximate size — so users with limited storage can decide before pulling.
+ipcMain.handle('git:pullPreview', async (_e, p) => {
+  const repo = expandHome(p);
+  const branch = (await git(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim() || 'HEAD';
+  await git(repo, ['fetch', '--quiet', 'origin', branch]); // refresh origin/<branch>
+  const ref = `origin/${branch}`;
+  if ((await git(repo, ['rev-parse', '--verify', '--quiet', ref])).err) {
+    return { ok: false, error: 'No matching branch on GitHub.' };
+  }
+  const behind = parseInt((await git(repo, ['rev-list', '--count', `HEAD..${ref}`])).stdout.trim() || '0', 10);
+  if (behind === 0) return { ok: true, behind: 0, files: [], bytes: 0 };
+
+  const ns = await git(repo, ['diff', '--name-status', `HEAD..${ref}`]);
+  const lines = ns.stdout.trim() ? ns.stdout.trim().split('\n') : [];
+  const files = [];
+  let bytes = 0;
+  for (const ln of lines.slice(0, 500)) {
+    const parts = ln.split('\t');
+    const status = parts[0][0]; // A / M / D / R
+    const file = parts[parts.length - 1];
+    let size = 0;
+    if (status !== 'D') {
+      const s = await git(repo, ['cat-file', '-s', `${ref}:${file}`]);
+      if (!s.err) size = parseInt(s.stdout.trim() || '0', 10) || 0;
+    }
+    bytes += size;
+    files.push({ status, file, size });
+  }
+  return { ok: true, behind, files, bytes, truncated: lines.length > 500 };
+});
+
 ipcMain.handle('git:pull', async (_e, p) => {
   const repo = expandHome(p);
   // Pull explicitly from origin/<branch> so it works even without upstream tracking.

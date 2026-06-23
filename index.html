@@ -83,6 +83,20 @@
       </div>
     </div>
 
+    <!-- Pull-preview modal -->
+    <div id="pull-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Get latest from GitHub</h3>
+        <p class="hint" id="pull-summary">Checking…</p>
+        <div id="pull-files" class="sync-files"></div>
+        <div class="modal-actions">
+          <button id="pull-cancel" class="block-btn">Cancel</button>
+          <button id="pull-go" class="block-btn primary" disabled>Pull</button>
+        </div>
+        <div id="pull-status" class="import-status"></div>
+      </div>
+    </div>
+
     <!-- Add-AI (custom command) modal -->
     <div id="addai-modal" class="modal hidden">
       <div class="modal-card">
