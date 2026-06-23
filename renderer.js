@@ -167,6 +167,8 @@ function loadSettings() {
     autoUpdate: s.autoUpdate !== false, // opt-out; checks on launch by default
     restoreTabs: s.restoreTabs !== false, // opt-out; reopen tabs on relaunch
     theme: s.theme === 'light' ? 'light' : 'dark',
+    sidebarWidth: typeof s.sidebarWidth === 'number' ? Math.max(200, Math.min(520, s.sidebarWidth)) : 280,
+    splitRatio: typeof s.splitRatio === 'number' ? Math.max(20, Math.min(80, s.splitRatio)) : 50,
   };
 }
 let settings = loadSettings();
@@ -200,8 +202,19 @@ function applyTheme() {
     try { s.term.options.theme = t; } catch {}
   }
 }
+function applySidebarWidth() {
+  document.documentElement.style.setProperty('--sidebar-w', settings.sidebarWidth + 'px');
+}
+// Refit the visible terminal(s) — used after a resize drag.
+function refitTerminals() {
+  const a = sessions.get(activeId);
+  if (a && a.fit) fitAndResize(a);
+  const sec = splitId && sessions.get(splitId);
+  if (sec && sec.fit) fitAndResize(sec);
+}
 applyAccent();
 applyTheme();
+applySidebarWidth();
 
 // ---------------------------------------------------------------------------
 // AI picker
@@ -1040,6 +1053,7 @@ function applySplitClasses() {
   if (!valid) { splitId = null; terminalsEl.classList.remove('split'); }
   else {
     terminalsEl.classList.add('split');
+    terminalsEl.style.setProperty('--split', settings.splitRatio + '%');
     const sec = sessions.get(splitId);
     sec.pane.classList.add('split-2');
     if (sec.fit) fitAndResize(sec);
@@ -1288,6 +1302,50 @@ window.addEventListener('resize', () => {
     const s = sessions.get(activeId);
     if (s) fitAndResize(s);
   }, 80);
+});
+
+// ---------------------------------------------------------------------------
+// Resizable layout — drag the sidebar edge, and the split divider.
+// ---------------------------------------------------------------------------
+function startDrag(handle, onMove) {
+  document.body.classList.add('resizing');
+  if (handle) handle.classList.add('dragging');
+  const move = (ev) => onMove(ev);
+  const up = () => {
+    document.body.classList.remove('resizing');
+    if (handle) handle.classList.remove('dragging');
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    saveSettings();      // persist the new width / ratio
+    refitTerminals();
+  };
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+
+const sidebarResizer = document.getElementById('sidebar-resizer');
+sidebarResizer.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  startDrag(sidebarResizer, (ev) => {
+    // The sidebar starts at the window's left edge, so its width === clientX.
+    settings.sidebarWidth = Math.max(200, Math.min(520, Math.round(ev.clientX)));
+    applySidebarWidth();
+    refitTerminals();
+  });
+});
+
+// Divider between the two split panes.
+const splitDivider = el('div', { class: 'split-divider', title: 'Drag to resize the split' });
+terminalsEl.appendChild(splitDivider);
+splitDivider.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  const rect = terminalsEl.getBoundingClientRect();
+  startDrag(splitDivider, (ev) => {
+    const pct = Math.max(20, Math.min(80, ((ev.clientX - rect.left) / rect.width) * 100));
+    settings.splitRatio = Math.round(pct);
+    terminalsEl.style.setProperty('--split', pct + '%');
+    refitTerminals();
+  });
 });
 
 // ---------------------------------------------------------------------------

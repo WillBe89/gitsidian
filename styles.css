@@ -15,6 +15,7 @@
   --busy: #e2b53a;
   --radius: 10px;
   --term-bg: #0a0c10;
+  --sidebar-w: 280px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: "SF Mono", ui-monospace, Menlo, Monaco, "Cascadia Code", monospace;
 }
@@ -108,14 +109,19 @@ body.plat-mac .titlebar { padding-left: 80px; } /* clear the macOS traffic light
 
 /* Sidebar ---------------------------------------------------------------- */
 .sidebar {
-  width: 280px;
-  flex: 0 0 280px;
+  width: var(--sidebar-w);
+  flex: 0 0 var(--sidebar-w);
   background: var(--panel);
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
+
+/* Drag handle between sidebar and main; drag the split divider in split view. */
+.resizer { flex: 0 0 6px; margin-left: -3px; cursor: col-resize; z-index: 6; }
+.resizer:hover, .resizer.dragging { background: var(--accent); }
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none; }
 .sidebar-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px 8px;
@@ -381,10 +387,14 @@ body.plat-mac .titlebar { padding-left: 80px; } /* clear the macOS traffic light
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 .terminals { flex: 1; position: relative; background: var(--term-bg); min-height: 0; }
-/* Split view — active terminal on the left, the chosen second on the right. */
-.terminals.split .term-pane.active { inset: 0 50% 0 0; }
-.terminals.split .term-pane.split-2 { display: flex; inset: 0 0 0 50%; border-left: 1px solid var(--line); }
+/* Split view — active terminal on the left, the chosen second on the right.
+   --split is the left pane's width (a %), draggable via the divider. */
+.terminals.split .term-pane.active { inset: 0 calc(100% - var(--split, 50%)) 0 0; }
+.terminals.split .term-pane.split-2 { display: flex; inset: 0 0 0 var(--split, 50%); border-left: 1px solid var(--line); }
 .new-tab.split-toggle.on { color: var(--accent-2); border-color: var(--accent-2); }
+.split-divider { display: none; position: absolute; top: 0; bottom: 0; left: var(--split, 50%); width: 8px; margin-left: -4px; cursor: col-resize; z-index: 5; }
+.terminals.split .split-divider { display: block; }
+.split-divider:hover, .split-divider.dragging { background: var(--accent); }
 .term-pane { position: absolute; inset: 0; display: none; flex-direction: column; }
 .term-pane.active { display: flex; }
 .term-pane.drop::after {
@@ -487,9 +497,8 @@ body.plat-mac .titlebar { padding-left: 80px; } /* clear the macOS traffic light
 .import-status.ok { color: var(--ok); }
 
 /* Updates */
-.settings-update-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
-.settings-update-row .block-btn { flex: 0 0 auto; }
-.settings-update-row .hint { margin: 0; }
+.settings-update-row { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 8px; }
+.settings-update-row .hint { margin: 0; text-align: center; }
 .update-notes {
   font-size: 12px; color: var(--muted); line-height: 1.5;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;

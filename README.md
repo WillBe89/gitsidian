@@ -6,12 +6,13 @@
 
 **A friendly, multi-tab cockpit for running AI coding assistants inside your projects — no terminal required.**
 
-Open any git repo or Obsidian vault, browse its files, and run Claude Code, Codex, Ollama, or a plain shell — several at once, each in its own tab with a live status light. Publish, push, and pull to GitHub from the sidebar, with guard-rails that stop you damaging public repos.
+Open any git repo or Obsidian vault, browse and **edit** its files, and run Claude Code, Codex, Ollama, or a plain shell — several at once, each in its own tab with a live status light. Publish, push, and pull to GitHub from the sidebar, with guard-rails that stop you damaging public repos.
 
 [![Download for macOS](https://img.shields.io/badge/Download-macOS-black?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
 [![Download for Windows](https://img.shields.io/badge/Download-Windows-0078D6?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
+[![Download for Linux](https://img.shields.io/badge/Download-Linux-F0AB00?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
 
-![license: MIT](https://img.shields.io/badge/license-MIT-blue) ![platforms](https://img.shields.io/badge/platforms-macOS_·_Windows-555)
+![license: MIT](https://img.shields.io/badge/license-MIT-blue) ![platforms](https://img.shields.io/badge/platforms-macOS_·_Windows_·_Linux-555)
 
 </div>
 
@@ -46,8 +47,10 @@ Several AI sessions running side by side, each in its own tab:
 ## Features
 
 - **Find repos automatically** — one click scans your computer for git repos and Obsidian vaults and lets you pick which to load. No digging through your file manager.
-- **Projects + file tree** — browse any project's files; launch an assistant in any sub-folder; click a file to open it in your editor.
-- **Embedded multi-tab terminals** — real terminals (`node-pty` + `xterm.js`) *inside* the app. Rename tabs, watch their status lights, open as many as you need (up to a safe cap).
+- **Projects + file tree** — browse any project's files and launch an assistant in any sub-folder. **Manage files right in the tree:** create, rename, and delete (to the Trash) via right-click.
+- **Built-in editor** — click a text file to open and edit it in a tab; save with ⌘S/Ctrl+S. Large or binary files open in your default app instead. No external editor needed.
+- **Embedded multi-tab terminals** — real terminals (`node-pty` + `xterm.js`) *inside* the app. Rename tabs, watch their status lights, open as many as you need (up to a safe cap), and **split two side by side**.
+- **Resizable layout** — drag the sidebar edge and the split divider to size things how you like; your choices persist.
 - **Any AI CLI** — auto-detects whatever you have installed from a broad list (Claude Code, Codex, Gemini, OpenCode, Aider, Goose, Crush, Cursor Agent, Amazon Q, Cody, Plandex, Open Interpreter, gptme, Mods, llm, aichat, Shell GPT, Ollama) and shows only those, plus a plain shell. **Add a command…** lets you run anything else (e.g. `ollama run deepseek-coder`, `aider --model deepseek`) or future tools.
 - **Friendly composer** — a normal text box per session: command history (↑/↓), Ctrl+C / Ctrl+L, drag-and-drop file paths, quick-command buttons, and reliable Enter-to-send even inside full-screen TUIs.
 - **Live status lights** — each tab shows **busy** (the assistant is working), **idle** (waiting on you), or **exited**, plus an unread dot on background tabs.
@@ -59,9 +62,14 @@ Several AI sessions running side by side, each in its own tab:
   | `N↑ to push` | Committed, not pushed | Push |
   | `N↓ get latest` | Behind the remote | Pull (fast-forward, safe) |
   | `synced` | Up to date | — |
+- **Inline diff & branches** — changed files show a `±` to view exactly what changed; each project has a branch switcher to change or create a branch.
+- **Suggested commit messages** — the Sync dialog can write a commit message from your changes (using a local AI CLI if you have one, otherwise a tidy file-based summary).
 - **Safety guard-rails** — pushing to a **public** repo needs a deliberate confirmation; **read-only** repos block the push (but you can still pull); your private repos stay one-click easy.
 - **GitHub account switcher** — a chip in the title bar shows your active account; switch between accounts (e.g. personal vs work) or add one, without the terminal.
 - **Slack-style organisation** — drag projects into groups, reorder and rename them, remove what you don't want. Your layout persists across restarts.
+- **Make it yours** — Dark/Light theme, accent colour, terminal font size/weight, scrollback. Paste a screenshot into the composer and it's saved into the project with the path inserted for you.
+- **Session persistence** — your open terminal and editor tabs reopen when you relaunch.
+- **Built-in auto-update** — Gitsidian checks GitHub for new releases and, with your approval, downloads and launches the installer. The current version shows in the sidebar and Settings.
 
 ## Install
 
@@ -76,6 +84,10 @@ Several AI sessions running side by side, each in its own tab:
 ### Windows
 1. Download **`Gitsidian Setup x.y.z.exe`** from the [latest release](https://github.com/WillBe89/gitsidian/releases/latest).
 2. Run it. SmartScreen may warn because the build is unsigned — choose **More info → Run anyway**.
+
+### Linux
+1. Download the **`.AppImage`** (portable) or **`.deb`** (Debian/Ubuntu) from the [latest release](https://github.com/WillBe89/gitsidian/releases/latest).
+2. AppImage: `chmod +x Gitsidian-*.AppImage` then run it. Deb: `sudo dpkg -i gitsidian_*.deb`.
 
 ### Quick install (macOS, one command)
 ```sh
@@ -99,7 +111,7 @@ npm start
 
 ## Requirements
 
-- **macOS** or **Windows** (Linux runs from source but isn't packaged yet).
+- **macOS**, **Windows**, or **Linux** (all three are now packaged).
 - At least one AI CLI on your `PATH` — e.g. [Claude Code](https://claude.com/claude-code). Gitsidian uses whatever you have installed.
 - **[GitHub CLI](https://cli.github.com/) (`gh`)**, signed in (`gh auth login`) — powers the publish/push/pull, the public-repo safety checks, and the account switcher.
 - **Node.js 18+** only if running from source.
@@ -114,7 +126,9 @@ npm start
 6. **Switch GitHub accounts** from the chip in the top-right.
 7. **Organise** by dragging projects into groups you create with the **New group** button.
 
-**Shortcuts:** ⌘T new terminal · ⌘W close tab · ⌘1–9 switch tabs · ⌘K clear *(Ctrl+Shift on Windows/Linux)*. Closing a tab that's still running asks for confirmation, and a background session that finishes a task pops a notification.
+8. **Edit files in place.** Click a text file to open it in a tab and save with **⌘S/Ctrl+S** — or right-click in the tree to create, rename, or delete files and folders.
+
+**Shortcuts:** ⌘T new terminal · ⌘W close tab · ⌘1–9 switch tabs · ⌘K clear · ⌘S save (in the editor) *(Ctrl+Shift on Windows/Linux)*. Closing a tab that's still running — or an editor with unsaved changes — asks for confirmation, and a background session that finishes a task pops a notification.
 
 ## How it works
 
@@ -124,7 +138,8 @@ npm start
 | `preload.js` | Secure `contextBridge` API — context isolation on, node integration off. |
 | `renderer.js` | Sidebar, file tree, tabs, terminals, composer, git/account dialogs. |
 | `index.html` / `styles.css` | The UI shell. |
-| `.github/workflows/release.yml` | CI that builds macOS + Windows installers on each version tag. |
+| `.github/workflows/release.yml` | CI that builds macOS + Windows + Linux installers on each version tag. |
+| `build/notarize.js` · `build/entitlements.mac.plist` | macOS sign + notarize scaffolding (activates once an Apple Developer ID is configured). |
 
 Vaults are discovered from Obsidian's own registry plus a home-folder scan; your added projects, groups, and layout are stored in the app's per-user data folder. The "is it still working?" tab light is an output-activity heuristic, so it works for any CLI. Terminals are real pseudo-terminals (`node-pty`), so anything that runs in your shell runs here.
 
@@ -134,13 +149,14 @@ Vaults are discovered from Obsidian's own registry plus a home-folder scan; your
 npm run pack     # quick unpacked .app/.exe in dist/ (for testing)
 npm run dist     # installer(s) for the current OS in dist/
 ```
-Or just push a `v*` tag — CI builds **both** macOS and Windows and attaches them to the GitHub Release automatically. Builds are **ad-hoc signed but not notarized** by default; add Apple Developer / Windows signing credentials to `package.json` → `build` to ship notarised/signed apps with no security prompt.
+Or just push a `v*` tag — CI builds **macOS, Windows, and Linux** and attaches them to the GitHub Release automatically. Builds are **ad-hoc signed but not notarized** by default; the signing/notarization pipeline is already wired (`build/notarize.js`, hardened-runtime entitlements) and activates the moment you add Apple Developer credentials (`APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` + a Developer ID cert) as CI secrets.
 
 ## Roadmap
 
-See **[ROADMAP.md](ROADMAP.md)** for what's planned — highlights: a close-running-tab
-warning, a settings/personalization panel, pull preview with download size,
-mark-as-ignore, code signing/notarization, auto-update, and Linux packaging.
+See **[ROADMAP.md](ROADMAP.md)** for what's planned — highlights: per-file staging,
+a conflict helper for pulls, syntax highlighting in the editor, multi-file search,
+and full code signing/notarization (the build is wired for it; it needs a paid
+Developer ID).
 
 ## Support
 
