@@ -2,6 +2,43 @@
 
 All notable changes to Gitsidian.
 
+## 0.6.0
+
+A "VSCode-lite" pass **plus team collaboration** — a real code editor, the full
+git loop, and team chat with command dispatch, so simple AI jobs never need a
+separate editor or a second app.
+
+- **Real code editor (CodeMirror)** — syntax highlighting for many languages,
+  line numbers, bracket matching, dark/light themes, find/replace (⌘F), and
+  go-to-line (Alt+G).
+- **Review & stage changes** — a per-project tab to stage/unstage individual
+  files **or individual hunks**, view each file's diff, and commit only what's
+  staged, then push.
+- **Commit history** — a per-project log; click a commit to see its diff.
+- **Open a Pull Request** — from the branch menu or command palette: opens the
+  existing PR for the branch (also shown as a chip on the project card), or
+  creates one via `gh`.
+- **Multi-file search** — Shift+⌘F to search across a project; click a match to
+  jump to that line.
+- **Command palette** — ⌘P to fuzzy-open files in the active project and run
+  quick actions.
+- **Markdown & image preview** — a Preview toggle for `.md` files; image files
+  open in an image preview pane.
+- **Drag-and-drop in the tree** — move files and folders into other folders.
+- **Auto-reload** — when a file you have open changes on disk (e.g. an AI agent
+  edits it), the editor reloads it — and keeps your unsaved edits if you have any.
+- **Team chat** — message your team from inside Gitsidian, using your GitHub
+  account as your identity (login + avatar). A channel = one repo (its chat issue);
+  switch channels on the left, invite by GitHub username or email, markdown +
+  @mentions + autolinks, polls + local cache, public-repo warning.
+- **Command dispatch (opt-in)** — propose an AI prompt for a teammate to run in a
+  specific repo; they get an Approve card and it's *staged* in that repo's session
+  for them to review and send. Guard rails: off by default, AI-prompts-only,
+  local-approval + final-send gate, risky-pattern warnings, and it only runs in a
+  repo they actually have cloned.
+- **Fix:** long terminals now scroll cleanly to the bottom with the wheel/trackpad
+  (the viewport stays sized to the visible area as the layout changes).
+
 ## 0.5.0
 
 A big release — Gitsidian gains a built-in editor, file management, richer git,

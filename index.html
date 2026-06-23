@@ -5,10 +5,14 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://avatars.githubusercontent.com; font-src 'self';"
     />
     <title>Gitsidian</title>
     <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css" />
+    <link rel="stylesheet" href="node_modules/codemirror/lib/codemirror.css" />
+    <link rel="stylesheet" href="node_modules/codemirror/theme/material-darker.css" />
+    <link rel="stylesheet" href="node_modules/codemirror/theme/eclipse.css" />
+    <link rel="stylesheet" href="node_modules/codemirror/addon/dialog/dialog.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -31,6 +35,9 @@
         <div class="sidebar-head">
           <span class="section-label">Projects</span>
           <div class="head-btns">
+            <button id="open-team" class="icon-btn" title="Team chat" aria-label="Team chat">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.2A8 8 0 1 1 21 12z"/></svg>
+            </button>
             <button id="open-settings" class="icon-btn" title="Settings" aria-label="Settings">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="10" cy="8" r="2.4" fill="var(--panel)"/><circle cx="15" cy="16" r="2.4" fill="var(--panel)"/></svg>
             </button>
@@ -114,6 +121,8 @@
         </div>
         <label class="mini-label">Sessions</label>
         <label class="check-row"><input type="checkbox" id="settings-restore" /> Reopen my tabs when I relaunch</label>
+        <label class="mini-label">Team</label>
+        <label class="check-row"><input type="checkbox" id="settings-chatcommands" /> Allow approved chat commands to run in my sessions</label>
         <label class="mini-label">Updates</label>
         <label class="check-row"><input type="checkbox" id="settings-autoupdate" /> Check for updates on launch</label>
         <div class="settings-update-row">
@@ -255,6 +264,31 @@
 
     <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
     <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+    <!-- CodeMirror (editor) — core, language modes, and addons -->
+    <script src="node_modules/codemirror/lib/codemirror.js"></script>
+    <script src="node_modules/codemirror/mode/meta.js"></script>
+    <script src="node_modules/codemirror/mode/javascript/javascript.js"></script>
+    <script src="node_modules/codemirror/mode/xml/xml.js"></script>
+    <script src="node_modules/codemirror/mode/css/css.js"></script>
+    <script src="node_modules/codemirror/mode/htmlmixed/htmlmixed.js"></script>
+    <script src="node_modules/codemirror/mode/markdown/markdown.js"></script>
+    <script src="node_modules/codemirror/mode/python/python.js"></script>
+    <script src="node_modules/codemirror/mode/shell/shell.js"></script>
+    <script src="node_modules/codemirror/mode/yaml/yaml.js"></script>
+    <script src="node_modules/codemirror/mode/clike/clike.js"></script>
+    <script src="node_modules/codemirror/mode/go/go.js"></script>
+    <script src="node_modules/codemirror/mode/rust/rust.js"></script>
+    <script src="node_modules/codemirror/mode/sql/sql.js"></script>
+    <script src="node_modules/codemirror/mode/php/php.js"></script>
+    <script src="node_modules/codemirror/mode/ruby/ruby.js"></script>
+    <script src="node_modules/codemirror/mode/dockerfile/dockerfile.js"></script>
+    <script src="node_modules/codemirror/addon/edit/matchbrackets.js"></script>
+    <script src="node_modules/codemirror/addon/edit/closebrackets.js"></script>
+    <script src="node_modules/codemirror/addon/selection/active-line.js"></script>
+    <script src="node_modules/codemirror/addon/dialog/dialog.js"></script>
+    <script src="node_modules/codemirror/addon/search/searchcursor.js"></script>
+    <script src="node_modules/codemirror/addon/search/search.js"></script>
+    <script src="node_modules/codemirror/addon/search/jump-to-line.js"></script>
     <script src="renderer.js"></script>
   </body>
 </html>

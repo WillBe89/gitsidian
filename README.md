@@ -6,7 +6,7 @@
 
 **A friendly, multi-tab cockpit for running AI coding assistants inside your projects — no terminal required.**
 
-Open any git repo or Obsidian vault, browse and **edit** its files, and run Claude Code, Codex, Ollama, or a plain shell — several at once, each in its own tab with a live status light. Publish, push, and pull to GitHub from the sidebar, with guard-rails that stop you damaging public repos.
+Open any git repo or Obsidian vault, browse and **edit** its files (with syntax highlighting), and run Claude Code, Codex, Ollama, or a plain shell — several at once, each in its own tab with a live status light. Publish, push, and pull to GitHub from the sidebar with guard-rails, review and stage changes, and **chat with your team** — all without leaving the app.
 
 [![Download for macOS](https://img.shields.io/badge/Download-macOS-black?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
 [![Download for Windows](https://img.shields.io/badge/Download-Windows-0078D6?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
@@ -48,7 +48,8 @@ Several AI sessions running side by side, each in its own tab:
 
 - **Find repos automatically** — one click scans your computer for git repos and Obsidian vaults and lets you pick which to load. No digging through your file manager.
 - **Projects + file tree** — browse any project's files and launch an assistant in any sub-folder. **Manage files right in the tree:** create, rename, and delete (to the Trash) via right-click.
-- **Built-in editor** — click a text file to open and edit it in a tab; save with ⌘S/Ctrl+S. Large or binary files open in your default app instead. No external editor needed.
+- **Built-in code editor** — click a file to open it in a tab with **syntax highlighting** (CodeMirror, ~16 languages), line numbers, find/replace (⌘F), and go-to-line (Alt+G). Save with ⌘S/Ctrl+S. **Markdown files** get a Preview toggle and **images** open in a preview pane. A "VSCode-lite" for the quick AI jobs — no external editor needed.
+- **Command palette (⌘P)** — fuzzy-open any file in the active project and run quick actions from the keyboard. **Multi-file search** with Shift+⌘F jumps to matches.
 - **Embedded multi-tab terminals** — real terminals (`node-pty` + `xterm.js`) *inside* the app. Rename tabs, watch their status lights, open as many as you need (up to a safe cap), and **split two side by side**.
 - **Resizable layout** — drag the sidebar edge and the split divider to size things how you like; your choices persist.
 - **Any AI CLI** — auto-detects whatever you have installed from a broad list (Claude Code, Codex, Gemini, OpenCode, Aider, Goose, Crush, Cursor Agent, Amazon Q, Cody, Plandex, Open Interpreter, gptme, Mods, llm, aichat, Shell GPT, Ollama) and shows only those, plus a plain shell. **Add a command…** lets you run anything else (e.g. `ollama run deepseek-coder`, `aider --model deepseek`) or future tools.
@@ -62,12 +63,16 @@ Several AI sessions running side by side, each in its own tab:
   | `N↑ to push` | Committed, not pushed | Push |
   | `N↓ get latest` | Behind the remote | Pull (fast-forward, safe) |
   | `synced` | Up to date | — |
+- **Review, stage & commit** — a per-project **Review** tab to stage/unstage individual files **or hunks**, see each file's diff, and commit only what's staged, then push. Plus **commit history** (click a commit to see its diff) and **open a Pull Request** from a branch via `gh`.
 - **Inline diff & branches** — changed files show a `±` to view exactly what changed; each project has a branch switcher to change or create a branch.
 - **Suggested commit messages** — the Sync dialog can write a commit message from your changes (using a local AI CLI if you have one, otherwise a tidy file-based summary).
 - **Safety guard-rails** — pushing to a **public** repo needs a deliberate confirmation; **read-only** repos block the push (but you can still pull); your private repos stay one-click easy.
 - **GitHub account switcher** — a chip in the title bar shows your active account; switch between accounts (e.g. personal vs work) or add one, without the terminal.
 - **Slack-style organisation** — drag projects into groups, reorder and rename them, remove what you don't want. Your layout persists across restarts.
 - **Make it yours** — Dark/Light theme, accent colour, terminal font size/weight, scrollback. Paste a screenshot into the composer and it's saved into the project with the path inserted for you.
+- **Team chat, built on GitHub** — message your team from inside Gitsidian using your GitHub account as your identity (login + avatar). A **channel = one private repo** (its chat issue); switch channels, invite by username **or email** (GitHub prompts non-members to sign up), with markdown, @mentions, and a public-repo warning. No server, no extra accounts.
+- **Command dispatch (opt-in)** — propose an AI prompt for a teammate to run in a specific repo; they get an Approve card and it's *staged* in that repo's session for them to review and send. Guard-railed: off by default, AI-prompts-only, local approval + a final human send, risky-pattern warnings, and it only runs in a repo they actually have cloned.
+- **Auto-reload** — when a file you have open changes on disk (e.g. an AI agent edits it), the editor reloads it — keeping your unsaved edits if you have any.
 - **Session persistence** — your open terminal and editor tabs reopen when you relaunch.
 - **Built-in auto-update** — Gitsidian checks GitHub for new releases and, with your approval, downloads and launches the installer. The current version shows in the sidebar and Settings.
 
@@ -153,11 +158,11 @@ Or just push a `v*` tag — CI builds **macOS, Windows, and Linux** and attaches
 
 ## Roadmap
 
-See **[ROADMAP.md](ROADMAP.md)** for what's planned. Next up (0.6.0) is making the
-git + editing loop complete: a review-and-stage changes view, commit history, open
-a PR from a branch, editor find/replace + syntax highlighting, Markdown/image
-preview, and a command palette. Further out: full code signing/notarization (the
-build is wired for it; it needs a paid Developer ID).
+See **[ROADMAP.md](ROADMAP.md)** for what's planned. Near-term: multi-file search
+refinements, more editor languages and format-on-save, conflict help for pulls, and
+real-time team collaboration. The biggest one is full **code signing & notarization**
+(the build is wired for it; it just needs a paid Apple Developer ID) to remove the
+first-launch security prompt — see **Support** above.
 
 ## Support
 

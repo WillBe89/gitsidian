@@ -4,31 +4,23 @@ Ideas for future releases — roughly in priority order, not firm commitments.
 Suggestions and contributions welcome; sponsorship helps fund the signing/notarization
 that removes the OS security prompts (see the README's **Support** section).
 
-## Next up — 0.6.0 candidates
+## Team & collaboration
 
-The theme for the next release: **make the git + editing loop feel complete**, so
-you rarely need to drop to a raw terminal.
+0.6.0 introduced GitHub-backed team chat + command dispatch. Next for teams:
 
-- **Review & stage changes** — a "Review changes" view for a whole project: see
-  every changed file's diff, and stage/unstage individual files (and hunks) before
-  committing, instead of all-or-nothing.
-- **Commit history** — a per-project log (messages, author, date); click a commit
-  to see its diff. The natural companion to the inline diff we just shipped.
-- **Open a Pull Request** — from a branch, create a PR with `gh` (title + body)
-  without leaving Gitsidian; show the PR's status on the project card.
-- **Editor essentials** — find/replace (⌘F), go-to-line, and basic syntax
-  highlighting so the built-in editor is comfortable for real edits.
-- **Markdown & image preview** — a preview toggle for `.md` files (great for
-  Obsidian vaults) and inline image previews when you open an image.
-- **Command palette (⌘P)** — fuzzy-open any file in the active project and run
-  common actions from the keyboard.
+- **Real-time chat** — instant delivery, typing indicators, and presence
+  (who's online / which repo they're in), instead of the current ~polling.
+- **Shared / pair sessions** — watch a teammate's AI session live (view-only
+  first; an edit/drive mode is a much bigger, carefully-guarded step).
+- **Reactions, threads, and multiple channels** in chat, plus cross-channel
+  unread counts.
+- **Shareable team workspace** — one click to load the whole cockpit (the same
+  repos, groups, and default AI) a teammate uses.
 
 ## Editing & files
 
-- **Multi-file search** across a project (and jump to matches in the editor).
-- **Drag-and-drop in the tree** to move/copy files and folders.
-- **Auto-reload** an open file when it changes on disk (e.g. an AI edited it),
-  with a conflict prompt if you have unsaved changes.
+- **More languages & a code outline** in the editor; format-on-save hooks.
+- **Copy** (not just move) in the tree, and duplicate-file.
 
 ## Git & GitHub
 
@@ -59,6 +51,13 @@ you rarely need to drop to a raw terminal.
 - **More Linux formats** — `.rpm` and a system tray icon.
 
 ## Shipped recently
+
+**0.6.0:** CodeMirror code editor (syntax highlighting, find/replace, go-to-line) ·
+review & stage changes with per-hunk staging · commit history · open/show a pull
+request · multi-file search · command palette · Markdown/image preview ·
+drag-and-drop in the tree · auto-reload of files edited on disk · **team chat**
+(GitHub-backed, channels-per-repo, invite by username/email) · **AI command
+dispatch** (opt-in, guard-railed) · long-terminal scroll fix.
 
 **0.5.0:** built-in editor · file management in the tree (create/rename/delete) ·
 inline diff · branch switcher · AI-suggested commit messages · session persistence ·

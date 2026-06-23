@@ -1,6 +1,6 @@
 {
   "name": "gitsidian",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "productName": "Gitsidian",
   "description": "A friendly multi-tab cockpit for running AI coding CLIs (Claude Code, Codex, Ollama …) inside your Obsidian vaults and git repos — no Terminal required.",
@@ -48,6 +48,7 @@
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
+    "codemirror": "^5.65.21",
     "node-pty": "^1.1.0"
   },
   "build": {
@@ -73,8 +74,20 @@
     ],
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] },
-        { "target": "zip", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png",
@@ -84,7 +97,9 @@
       "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "build/icon.png"
     },
     "nsis": {
@@ -93,7 +108,10 @@
       "allowToChangeInstallationDirectory": true
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Development",
       "icon": "build/icon.png",
       "maintainer": "will.be <https://willbe.dev>"

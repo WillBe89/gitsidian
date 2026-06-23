@@ -11,11 +11,14 @@ contextBridge.exposeInMainWorld('gits', {
   listAis: () => ipcRenderer.invoke('ai:list'),
   addAi: (opts) => ipcRenderer.invoke('ai:add', opts),
   listDir: (p) => ipcRenderer.invoke('fs:list', p),
+  projFiles: (p) => ipcRenderer.invoke('proj:files', p),
+  search: (opts) => ipcRenderer.invoke('proj:search', opts),
   changes: (p) => ipcRenderer.invoke('git:changes', p),
   ignore: (opts) => ipcRenderer.invoke('git:ignore', opts),
 
   // File operations (editor + tree management)
   readFile: (p) => ipcRenderer.invoke('fs:read', p),
+  readImage: (p) => ipcRenderer.invoke('fs:readImage', p),
   writeFile: (opts) => ipcRenderer.invoke('fs:write', opts),
   createEntry: (opts) => ipcRenderer.invoke('fs:create', opts),
   renameEntry: (opts) => ipcRenderer.invoke('fs:rename', opts),
@@ -27,6 +30,31 @@ contextBridge.exposeInMainWorld('gits', {
   branches: (p) => ipcRenderer.invoke('git:branches', p),
   checkout: (opts) => ipcRenderer.invoke('git:checkout', opts),
   commitMessage: (p) => ipcRenderer.invoke('ai:commitMessage', p),
+
+  // Git: review & stage
+  statusFiles: (p) => ipcRenderer.invoke('git:statusFiles', p),
+  stage: (opts) => ipcRenderer.invoke('git:stage', opts),
+  unstage: (opts) => ipcRenderer.invoke('git:unstage', opts),
+  stageAll: (p) => ipcRenderer.invoke('git:stageAll', p),
+  unstageAll: (p) => ipcRenderer.invoke('git:unstageAll', p),
+  commitStaged: (opts) => ipcRenderer.invoke('git:commitStaged', opts),
+  push: (p) => ipcRenderer.invoke('git:push', p),
+  fileDiff: (opts) => ipcRenderer.invoke('git:fileDiff', opts),
+  applyHunk: (opts) => ipcRenderer.invoke('git:applyHunk', opts),
+
+  // File move (drag-and-drop in the tree) + file-change watching
+  moveEntry: (opts) => ipcRenderer.invoke('fs:move', opts),
+  watchAdd: (p) => ipcRenderer.invoke('watch:add', p),
+  watchRemove: (p) => ipcRenderer.invoke('watch:remove', p),
+  onFileChanged: (cb) => ipcRenderer.on('file:changed', (_e, payload) => cb(payload)),
+
+  // Git: commit history
+  log: (opts) => ipcRenderer.invoke('git:log', opts),
+  commitDiff: (opts) => ipcRenderer.invoke('git:commitDiff', opts),
+
+  // Pull requests
+  prView: (p) => ipcRenderer.invoke('gh:prView', p),
+  prCreate: (opts) => ipcRenderer.invoke('gh:prCreate', opts),
 
   // Session persistence
   saveSession: (data) => ipcRenderer.invoke('session:save', data),
@@ -43,6 +71,16 @@ contextBridge.exposeInMainWorld('gits', {
   sync: (opts) => ipcRenderer.invoke('git:sync', opts),
   pull: (p) => ipcRenderer.invoke('git:pull', p),
   pullPreview: (p) => ipcRenderer.invoke('git:pullPreview', p),
+
+  // Team chat (GitHub-issue based, gh identity)
+  teamConfig: (patch) => ipcRenderer.invoke('team:config', patch),
+  teamWhoami: () => ipcRenderer.invoke('team:whoami'),
+  teamCreateRepo: (name) => ipcRenderer.invoke('team:createRepo', name),
+  chatInit: (repo) => ipcRenderer.invoke('team:chatInit', repo),
+  chatList: (opts) => ipcRenderer.invoke('team:chatList', opts),
+  chatCache: (opts) => ipcRenderer.invoke('team:chatCache', opts),
+  chatPost: (opts) => ipcRenderer.invoke('team:chatPost', opts),
+  teamInvite: (opts) => ipcRenderer.invoke('team:invite', opts),
 
   // Auto-update
   appVersion: () => ipcRenderer.invoke('app:version'),

@@ -92,6 +92,8 @@ const TERM_THEME_LIGHT = {
   white: '#6e7781', brightWhite: '#1b1f27',
 };
 function termTheme() { return settings.theme === 'light' ? TERM_THEME_LIGHT : TERM_THEME; }
+const IS_MAC = window.gits.platform === 'darwin';
+function cmTheme() { return settings.theme === 'light' ? 'eclipse' : 'material-darker'; }
 
 // ---------------------------------------------------------------------------
 // Tiny DOM helper
@@ -142,6 +144,32 @@ function showContextMenu(x, y, items) {
 document.addEventListener('click', hideContextMenu);
 window.addEventListener('blur', hideContextMenu);
 
+// In-app text prompt (Electron's renderer doesn't support window.prompt()).
+// Resolves to the entered string, or null if cancelled.
+function uiPrompt(message, defaultValue = '', placeholder = '') {
+  return new Promise((resolve) => {
+    const input = el('input', { type: 'text', class: 'prompt-input', value: defaultValue || '', placeholder, spellcheck: 'false', autocapitalize: 'off' });
+    const okBtn = el('button', { class: 'block-btn primary', text: 'OK' });
+    const cancelBtn = el('button', { class: 'block-btn', text: 'Cancel' });
+    const overlay = el('div', { class: 'modal prompt-modal' },
+      el('div', { class: 'modal-card' },
+        el('p', { class: 'prompt-msg', text: message }),
+        input,
+        el('div', { class: 'modal-actions' }, cancelBtn, okBtn)));
+    document.body.appendChild(overlay);
+    const done = (val) => { overlay.remove(); resolve(val); };
+    okBtn.addEventListener('click', () => done(input.value));
+    cancelBtn.addEventListener('click', () => done(null));
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) done(null); });
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); done(input.value); }
+      else if (e.key === 'Escape') { e.preventDefault(); done(null); }
+    });
+    setTimeout(() => { input.focus(); input.select(); }, 0);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Settings (personalization) — persisted in localStorage, applied live
 // ---------------------------------------------------------------------------
@@ -166,6 +194,7 @@ function loadSettings() {
     defaultAi: s.defaultAi || null,
     autoUpdate: s.autoUpdate !== false, // opt-out; checks on launch by default
     restoreTabs: s.restoreTabs !== false, // opt-out; reopen tabs on relaunch
+    allowChatCommands: !!s.allowChatCommands, // opt-IN; off by default (safety)
     theme: s.theme === 'light' ? 'light' : 'dark',
     sidebarWidth: typeof s.sidebarWidth === 'number' ? Math.max(200, Math.min(520, s.sidebarWidth)) : 280,
     splitRatio: typeof s.splitRatio === 'number' ? Math.max(20, Math.min(80, s.splitRatio)) : 50,
@@ -180,8 +209,12 @@ function applyAccent() {
 }
 function applyFontSize() {
   for (const s of sessions.values()) {
-    if (!s.term) continue;
-    try { s.term.options.fontSize = settings.fontSize; s.fit.fit(); window.gits.ptyResize(s.id, s.term.cols, s.term.rows); } catch {}
+    if (s.term) {
+      try { s.term.options.fontSize = settings.fontSize; s.fit.fit(); window.gits.ptyResize(s.id, s.term.cols, s.term.rows); } catch {}
+    }
+    if (s.cm) {
+      try { s.cm.getWrapperElement().style.fontSize = settings.fontSize + 'px'; s.cm.refresh(); } catch {}
+    }
   }
 }
 function applyFontStyle() {
@@ -198,8 +231,8 @@ function applyTheme() {
   document.documentElement.setAttribute('data-theme', settings.theme === 'light' ? 'light' : 'dark');
   const t = termTheme();
   for (const s of sessions.values()) {
-    if (!s.term) continue;
-    try { s.term.options.theme = t; } catch {}
+    if (s.term) { try { s.term.options.theme = t; } catch {} }
+    if (s.cm) { try { s.cm.setOption('theme', cmTheme()); } catch {} }
   }
 }
 function applySidebarWidth() {
@@ -291,6 +324,23 @@ function handleBadge(p, actions) {
 }
 
 // Branch switcher — list branches in a context menu; switch or create.
+// Compact per-project actions menu (replaces the old button row).
+function openProjectMenu(e, p) {
+  const items = [{ label: 'Open in Finder', onClick: () => window.gits.openFinder(p.path) }];
+  if (p.git && p.git.isRepo) {
+    items.push({ label: 'Review changes…', onClick: () => openReview(p) });
+    items.push({ label: 'Commit history', onClick: () => openHistory(p) });
+    items.push({ label: `Branch: ${p.git.branch || '?'} — switch…`, onClick: () => openBranchMenu(e, p) });
+    items.push({ label: 'Pull request…', onClick: () => openPrFlow(p) });
+    items.push({ label: 'Open on GitHub ↗', onClick: async () => {
+      const url = await window.gits.webUrl(p.path);
+      if (url) window.gits.openUrl(url); else showToast('This project has no GitHub remote yet — publish it first.');
+    } });
+  }
+  items.push({ label: 'Open in Obsidian ↗', onClick: () => openObsidianDialog(p) });
+  showContextMenu(e.clientX, e.clientY, items);
+}
+
 async function openBranchMenu(e, p) {
   const res = await window.gits.branches(p.path);
   if (!res.ok) { showToast(res.error || 'Could not list branches.'); return; }
@@ -299,7 +349,34 @@ async function openBranchMenu(e, p) {
     onClick: () => { if (b !== res.current) switchBranch(p, b); },
   }));
   items.push({ label: '+ New branch…', onClick: () => createBranch(p) });
+  items.push({ label: 'Pull request…', onClick: () => openPrFlow(p) });
   showContextMenu(e.clientX, e.clientY, items);
+}
+
+// Open the existing PR for this branch, or prompt to create one.
+async function openPrFlow(p) {
+  showToast('Checking for a pull request…');
+  const view = await window.gits.prView(p.path);
+  if (view.exists && view.url) {
+    window.gits.openUrl(view.url);
+    showToast(`Opened PR #${view.number} (${(view.state || '').toLowerCase()}).`);
+    return;
+  }
+  // Prefill the title from the latest commit subject.
+  let suggested = '';
+  try { const lg = await window.gits.log({ repo: p.path, limit: 1 }); suggested = (lg.commits && lg.commits[0] && lg.commits[0].subject) || ''; } catch {}
+  const title = await uiPrompt('Pull request title:', suggested);
+  if (title === null) return;
+  const body = await uiPrompt('Description (optional):', '');
+  if (body === null) return;
+  showToast('Creating pull request…');
+  const r = await window.gits.prCreate({ repo: p.path, title: title.trim() || 'Update', body: body.trim() });
+  if (r.ok && r.url) {
+    window.gits.openUrl(r.url);
+    showToast(r.existed ? 'A PR already existed — opened it.' : 'Pull request created.');
+  } else {
+    showToast(r.error || 'Could not create the pull request.');
+  }
 }
 async function switchBranch(p, branch) {
   const r = await window.gits.checkout({ repo: p.path, branch });
@@ -307,7 +384,7 @@ async function switchBranch(p, branch) {
   else showToast(r.error || 'Could not switch branch.');
 }
 async function createBranch(p) {
-  const name = prompt('New branch name:', '');
+  const name = await uiPrompt('New branch name:', '');
   if (!name) return;
   const r = await window.gits.checkout({ repo: p.path, branch: name.trim(), create: true });
   if (r.ok) { showToast(`Created and switched to ${name.trim()}`); await loadProjects({ fetch: false }); }
@@ -327,6 +404,7 @@ let projectIndex = new Map(); // path -> project object
 let groupSeq = 0;
 let draggedPath = null;
 let draggedGroupId = null;
+let treeDrag = null; // { path, el } while dragging a file/folder within the tree
 
 // Always clear drag-highlight marks when a drag ends (or drops anywhere) — fixes
 // stuck red borders when a drag is cancelled or dropped on a child element.
@@ -475,32 +553,31 @@ function projectCard(p) {
 
   const meta = el('div', { class: 'vault-meta' });
   const actions = el('div', { class: 'vault-actions' });
-  const finderBtn = el('button', { class: 'tiny-btn', text: 'Finder' });
-  finderBtn.addEventListener('click', (e) => { e.stopPropagation(); window.gits.openFinder(p.path); });
-  actions.appendChild(finderBtn);
+  // A single compact menu replaces the old row of buttons (much cleaner).
   if (p.git && p.git.isRepo) {
-    const branchBtn = el('button', { class: 'tiny-btn branch-btn', title: 'Switch / create branch', text: `⎇ ${p.git.branch || '?'}` });
-    branchBtn.addEventListener('click', (e) => { e.stopPropagation(); openBranchMenu(e, p); });
-    actions.appendChild(branchBtn);
-
-    const ghBtn = el('button', { class: 'tiny-btn', text: 'GitHub ↗' });
-    ghBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const url = await window.gits.webUrl(p.path);
-      if (url) window.gits.openUrl(url);
-      else showToast('This project has no GitHub remote yet — publish it first.');
-    });
-    actions.appendChild(ghBtn);
+    const reviewBtn = el('button', { class: 'tiny-btn', title: 'Review changes, stage, commit & push', text: 'Review' });
+    reviewBtn.addEventListener('click', (e) => { e.stopPropagation(); openReview(p); });
+    actions.appendChild(reviewBtn);
   }
-  // Open in Obsidian for ANY project — opens a dialog explaining what happens
-  // (registers it as a local Obsidian vault) with options.
-  const obsBtn = el('button', { class: 'tiny-btn', text: 'Obsidian ↗' });
-  obsBtn.addEventListener('click', (e) => { e.stopPropagation(); openObsidianDialog(p); });
-  actions.appendChild(obsBtn);
+  const menuBtn = el('button', { class: 'tiny-btn actions-btn', title: 'Project actions', text: 'Actions ▾' });
+  menuBtn.addEventListener('click', (e) => { e.stopPropagation(); openProjectMenu(e, p); });
+  actions.appendChild(menuBtn);
   meta.appendChild(actions);
 
-  const treeRoot = el('div', { class: 'tree', 'data-loaded': '0', 'data-path': p.path });
+  const treeRoot = el('div', { class: 'tree', 'data-loaded': '0', 'data-path': p.path, 'data-depth': '0' });
   meta.appendChild(treeRoot);
+  // Dropping a tree item onto empty tree space moves it to the project root.
+  treeRoot.addEventListener('dragover', (e) => { if (treeDrag) e.preventDefault(); });
+  treeRoot.addEventListener('drop', async (e) => {
+    if (!treeDrag) return;
+    e.preventDefault(); e.stopPropagation();
+    const { path: src, el: srcEl } = treeDrag; treeDrag = null;
+    const r = await window.gits.moveEntry({ src, destDir: p.path });
+    if (!r.ok) { showToast(r.error || 'Could not move.'); return; }
+    await refreshContainer(treeRoot);
+    const sc = srcEl.closest('.tree-children');
+    if (sc) await refreshContainer(sc);
+  });
 
   header.addEventListener('click', async () => {
     const opening = !wrap.classList.contains('open');
@@ -672,7 +749,7 @@ function treeContextMenu(row, entry, depth) {
       const kids = row.nextElementSibling; // this folder's .tree-children
       const item = row.parentElement;
       const createInside = async (isDir) => {
-        const name = prompt(`New ${isDir ? 'folder' : 'file'} in "${entry.name}":`, '');
+        const name = await uiPrompt(`New ${isDir ? 'folder' : 'file'} in "${entry.name}":`, '');
         if (!name) return;
         const r = await window.gits.createEntry({ parent: entry.path, name, isDir });
         if (!r.ok) { showToast(r.error || 'Could not create.'); return; }
@@ -689,7 +766,7 @@ function treeContextMenu(row, entry, depth) {
     }
 
     items.push({ label: 'Rename…', onClick: async () => {
-      const name = prompt('Rename to:', entry.name);
+      const name = await uiPrompt('Rename to:', entry.name);
       if (!name || name === entry.name) return;
       const r = await window.gits.renameEntry({ path: entry.path, newName: name });
       if (!r.ok) { showToast(r.error || 'Could not rename.'); return; }
@@ -714,6 +791,37 @@ function treeContextMenu(row, entry, depth) {
   });
 }
 
+// Move the dragged tree item into destDir, then refresh the affected containers.
+async function dropIntoDir(destDir, destRow) {
+  if (!treeDrag) return;
+  const { path: src, el: srcEl } = treeDrag;
+  treeDrag = null;
+  const r = await window.gits.moveEntry({ src, destDir });
+  if (!r.ok) { showToast(r.error || 'Could not move.'); return; }
+  const destKids = destRow ? destRow.nextElementSibling : null; // dir's .tree-children
+  if (destRow && destRow.parentElement) destRow.parentElement.classList.add('open');
+  const srcContainer = srcEl.closest('.tree-children') || srcEl.closest('.tree');
+  if (destKids) await refreshContainer(destKids);
+  if (srcContainer && srcContainer !== destKids) await refreshContainer(srcContainer);
+}
+
+// Make a tree row draggable; directory rows also accept drops (move into folder).
+function wireTreeDnd(row, entry, isDir) {
+  row.setAttribute('draggable', 'true');
+  row.addEventListener('dragstart', (e) => {
+    e.stopPropagation();
+    treeDrag = { path: entry.path, el: row };
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', entry.path); } catch {}
+  });
+  row.addEventListener('dragend', (e) => { e.stopPropagation(); treeDrag = null; document.querySelectorAll('.tree-drop').forEach((x) => x.classList.remove('tree-drop')); });
+  if (isDir) {
+    row.addEventListener('dragover', (e) => { if (!treeDrag) return; e.preventDefault(); e.stopPropagation(); row.classList.add('tree-drop'); });
+    row.addEventListener('dragleave', () => row.classList.remove('tree-drop'));
+    row.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); row.classList.remove('tree-drop'); dropIntoDir(entry.path, row); });
+  }
+}
+
 function treeNode(entry, depth, changes) {
   const pad = depth * 14 + 8;
   const cc = changeClass(entry.path, entry.isDir, changes);
@@ -731,6 +839,7 @@ function treeNode(entry, depth, changes) {
       if (opening && kids.dataset.loaded === '0') await loadChildren(kids, entry.path, depth + 1, changes);
     });
     treeContextMenu(row, entry, depth);
+    wireTreeDnd(row, entry, true);
     item.append(row, kids);
     return item;
   }
@@ -751,9 +860,10 @@ function treeNode(entry, depth, changes) {
     row.appendChild(diffBtn);
   }
   row.appendChild(el('span', { class: 'run-hint reveal', title: 'Reveal in Finder', text: '⤴' }));
-  row.addEventListener('click', () => openEditor(entry.path));
+  row.addEventListener('click', () => (IMAGE_EXTS.test(entry.name) ? openImagePreview(entry.path) : openEditor(entry.path)));
   row.querySelector('.reveal').addEventListener('click', (e) => { e.stopPropagation(); window.gits.reveal(entry.path); });
   treeContextMenu(row, entry, depth);
+  wireTreeDnd(row, entry, false);
   return row;
 }
 
@@ -984,6 +1094,19 @@ async function openSession(cwd, label, aiOverride) {
     status: 'busy', unread: false, tabEl: null,
   };
   sessions.set(id, session);
+  // Keep xterm's rows/viewport in sync with the real visible area whenever it
+  // changes (tab shown, composer grows, split/sidebar drag, fonts settle). Fixes
+  // the "can't scroll to the very bottom until you press Down" dimension desync.
+  let roTimer = null;
+  const ro = new ResizeObserver(() => {
+    if (host.clientHeight <= 4 || host.clientWidth <= 4) return; // skip while hidden
+    clearTimeout(roTimer);
+    roTimer = setTimeout(() => {
+      try { fit.fit(); window.gits.ptyResize(id, term.cols, term.rows); } catch {}
+    }, 50);
+  });
+  ro.observe(host);
+  session.ro = ro;
   attachTab(session, { tag: shortAi(aiName), tagClass: 'tab-ai', tabTitle: cwd });
 
   welcomeEl.classList.add('hidden');
@@ -1032,7 +1155,9 @@ function activate(id) {
   applySplitClasses();
   const s = sessions.get(id);
   if (s) {
-    if (s.composerText) s.composerText.focus();
+    if (s.kind === 'chat' && !teamAdding) markSeen(); // clear the unread badge when you look at chat
+    if (s.cm) { requestAnimationFrame(() => { s.cm.refresh(); s.cm.focus(); }); }
+    else if (s.composerText) s.composerText.focus();
     else if (s.focusEl) s.focusEl.focus();
   }
 }
@@ -1078,7 +1203,10 @@ function closeSession(id) {
   // Guard against losing work: a running process, or an editor with unsaved edits.
   if (s.kind === 'term' && s.status === 'busy' && !confirm(`"${s.label}" is still running. Close it and stop the process?`)) return;
   if (s.kind === 'editor' && s.dirty && !confirm(`"${s.label}" has unsaved changes. Close without saving?`)) return;
+  if (s.ro) { try { s.ro.disconnect(); } catch {} }
   if (s.kind === 'term') { window.gits.ptyKill(id); if (s.term) s.term.dispose(); }
+  if (s.kind === 'editor') window.gits.watchRemove(s.filePath);
+  if (s.kind === 'chat') { teamListEl = null; teamChatId = null; teamChannelsEl = null; teamMainEl = null; teamAdding = false; } // bg poller keeps the badge live
   s.pane.remove();
   s.tabEl.remove();
   sessions.delete(id);
@@ -1130,8 +1258,74 @@ function setStatus(id, status) {
   s.tabEl.classList.add(status);
 }
 
+// File types we preview as images rather than opening in the text editor.
+const IMAGE_EXTS = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif)$/i;
+const MD_EXTS = /\.(md|markdown|mdx)$/i;
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// A compact, safe Markdown → HTML renderer (escapes first, then formats). Covers
+// headings, bold/italic/code, fenced code, links, images (as labels), lists,
+// blockquotes, and rules — enough for a readable preview, esp. Obsidian notes.
+function renderMarkdown(src) {
+  const lines = escapeHtml(src || '').replace(/\r\n?/g, '\n').split('\n');
+  const inline = (t) => t
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<span class="md-img">[image: $1]</span>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
+    // Autolink bare URLs (skip ones already inside a markdown link's href/text).
+    .replace(/(^|[^"(>])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2">$2</a>');
+  let html = '', i = 0, list = null;
+  const closeList = () => { if (list) { html += `</${list}>`; list = null; } };
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^```/.test(line)) {
+      closeList(); i++; let code = '';
+      while (i < lines.length && !/^```/.test(lines[i])) { code += lines[i] + '\n'; i++; }
+      i++; html += `<pre class="md-code">${code}</pre>`; continue;
+    }
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { closeList(); html += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; i++; continue; }
+    if (/^\s*[-*+]\s+/.test(line)) { if (list !== 'ul') { closeList(); html += '<ul>'; list = 'ul'; } html += `<li>${inline(line.replace(/^\s*[-*+]\s+/, ''))}</li>`; i++; continue; }
+    if (/^\s*\d+\.\s+/.test(line)) { if (list !== 'ol') { closeList(); html += '<ol>'; list = 'ol'; } html += `<li>${inline(line.replace(/^\s*\d+\.\s+/, ''))}</li>`; i++; continue; }
+    if (/^\s*>\s?/.test(line)) { closeList(); html += `<blockquote>${inline(line.replace(/^\s*>\s?/, ''))}</blockquote>`; i++; continue; }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { closeList(); html += '<hr/>'; i++; continue; }
+    if (!line.trim()) { closeList(); i++; continue; }
+    closeList(); html += `<p>${inline(line)}</p>`; i++;
+  }
+  closeList();
+  return html;
+}
+
 // ---------------------------------------------------------------------------
-// Built-in editor — open a text file in a tab, edit, save (Cmd/Ctrl+S).
+// Image preview — open an image file in a read-only pane (via a data URL).
+// ---------------------------------------------------------------------------
+let imageSeq = 0;
+async function openImagePreview(filePath) {
+  for (const [sid, s] of sessions) {
+    if (s.kind === 'image' && s.filePath === filePath) { activate(sid); return sid; }
+  }
+  const r = await window.gits.readImage(filePath);
+  if (!r.ok) { showToast(r.error || 'Could not open the image.'); return null; }
+  const id = `img${++imageSeq}`;
+  const img = el('img', { class: 'image-view', src: r.dataUrl, alt: basename(filePath) });
+  const pane = el('div', { class: 'term-pane image-pane', 'data-id': id, tabindex: '-1' }, el('div', { class: 'image-wrap' }, img));
+  terminalsEl.appendChild(pane);
+  const session = { id, kind: 'image', filePath, pane, focusEl: pane, label: basename(filePath), tabEl: null };
+  sessions.set(id, session);
+  attachTab(session, { tag: 'image', tagClass: 'tab-ai image', tabTitle: filePath });
+  welcomeEl.classList.add('hidden');
+  activate(id);
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// Built-in editor — CodeMirror: syntax highlighting, line numbers, save (⌘S),
+// find/replace (⌘F), go-to-line (Alt+G).
 // ---------------------------------------------------------------------------
 let editorSeq = 0;
 async function openEditor(filePath) {
@@ -1148,15 +1342,30 @@ async function openEditor(filePath) {
   const id = `e${++editorSeq}`;
   const label = basename(filePath);
 
-  const ta = el('textarea', { class: 'editor-text', spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off', autocomplete: 'off' });
-  ta.value = res.content;
+  const cmHost = el('div', { class: 'editor-cm' });
   const saveBtn = el('button', { class: 'send-btn', text: 'Save', disabled: 'true' });
   const bar = el('div', { class: 'editor-bar' }, el('span', { class: 'editor-info', text: filePath }), saveBtn);
-  const pane = el('div', { class: 'term-pane editor-pane', 'data-id': id }, ta, bar);
+  const pane = el('div', { class: 'term-pane editor-pane', 'data-id': id }, cmHost, bar);
   terminalsEl.appendChild(pane);
 
-  const session = { id, kind: 'editor', filePath, label, pane, focusEl: ta, textarea: ta, dirty: false, tabEl: null };
+  // Pick a syntax mode from the filename; unknown types fall back to plain text.
+  const modeInfo = (window.CodeMirror.findModeByFileName && window.CodeMirror.findModeByFileName(label)) || null;
+  const cm = window.CodeMirror(cmHost, {
+    value: res.content,
+    mode: modeInfo ? (modeInfo.mime || modeInfo.mode) : null,
+    theme: cmTheme(),
+    lineNumbers: true,
+    autoCloseBrackets: true,
+    matchBrackets: true,
+    styleActiveLine: true,
+    tabSize: 2,
+    indentUnit: 2,
+  });
+  cm.getWrapperElement().style.fontSize = settings.fontSize + 'px';
+
+  const session = { id, kind: 'editor', filePath, label, pane, cm, dirty: false, reloading: false, savedContent: res.content, tabEl: null };
   sessions.set(id, session);
+  window.gits.watchAdd(filePath); // reload if it changes on disk (e.g. an AI edits it)
 
   const markDirty = (d) => {
     session.dirty = d;
@@ -1164,21 +1373,80 @@ async function openEditor(filePath) {
     saveBtn.disabled = !d;
   };
   const save = async () => {
-    const r = await window.gits.writeFile({ path: filePath, content: ta.value });
-    if (r.ok) { markDirty(false); showToast(`Saved ${label}`); }
+    const content = cm.getValue();
+    const r = await window.gits.writeFile({ path: filePath, content });
+    if (r.ok) { session.savedContent = content; markDirty(false); showToast(`Saved ${label}`); }
     else showToast(r.error || 'Could not save.');
   };
-  ta.addEventListener('input', () => { if (!session.dirty) markDirty(true); });
-  ta.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); save(); }
+  session.save = save;
+  cm.on('change', () => { if (session.reloading) return; if (!session.dirty) markDirty(true); });
+  // Editing keys: save, find/replace, go-to-line (CodeMirror search addons).
+  cm.setOption('extraKeys', {
+    [IS_MAC ? 'Cmd-S' : 'Ctrl-S']: () => save(),
+    [IS_MAC ? 'Cmd-F' : 'Ctrl-F']: 'findPersistent',
+    [IS_MAC ? 'Cmd-Alt-F' : 'Ctrl-H']: 'replace',
+    'Alt-G': 'jumpToLine',
   });
   saveBtn.addEventListener('click', save);
+
+  // Markdown files get a Preview toggle (rendered HTML ↔ editable code).
+  if (MD_EXTS.test(filePath)) {
+    const previewEl = el('div', { class: 'md-preview hidden' });
+    previewEl.addEventListener('click', (e) => {
+      const a = e.target.closest('a');
+      if (a) { e.preventDefault(); const href = a.getAttribute('href'); if (/^https?:\/\//.test(href)) window.gits.openUrl(href); }
+    });
+    pane.insertBefore(previewEl, bar);
+    const prevBtn = el('button', { class: 'send-btn ghost', text: 'Preview' });
+    bar.insertBefore(prevBtn, saveBtn);
+    let previewing = false;
+    prevBtn.addEventListener('click', () => {
+      previewing = !previewing;
+      if (previewing) previewEl.innerHTML = renderMarkdown(cm.getValue());
+      previewEl.classList.toggle('hidden', !previewing);
+      cmHost.classList.toggle('hidden', previewing);
+      prevBtn.textContent = previewing ? 'Edit' : 'Preview';
+      if (!previewing) requestAnimationFrame(() => cm.refresh());
+    });
+  }
 
   attachTab(session, { tag: 'edit', tagClass: 'tab-ai edit', tabTitle: filePath });
   welcomeEl.classList.add('hidden');
   activate(id);
+  requestAnimationFrame(() => cm.refresh());
   persistSession();
   return id;
+}
+
+// Colourize a unified diff into a container (shared by the diff tab + review).
+function renderDiffInto(container, text) {
+  container.innerHTML = '';
+  for (const line of (text || '').split('\n')) {
+    let cls = 'd-ctx';
+    const c = line[0];
+    if (/^(diff |index |new file|deleted file|similarity|rename |\+\+\+|---)/.test(line)) cls = 'd-meta';
+    else if (line.startsWith('@@')) cls = 'd-hunk';
+    else if (c === '+') cls = 'd-add';
+    else if (c === '-') cls = 'd-del';
+    container.appendChild(el('div', { class: `d-line ${cls}`, text: line || ' ' }));
+  }
+}
+
+// Split a unified diff into its header (the diff --git / index / --- / +++ lines)
+// and individual @@ hunks — so a single hunk can be staged on its own.
+function splitUnifiedDiff(text) {
+  if (!text || !text.trim()) return null;
+  const at = text.indexOf('@@');
+  if (at === -1) return { header: text, hunks: [] };
+  const header = text.slice(0, at);
+  const hunks = [];
+  let cur = null;
+  for (const ln of text.slice(at).split('\n')) {
+    if (ln.startsWith('@@')) { if (cur !== null) hunks.push(cur); cur = ln + '\n'; }
+    else if (cur !== null) cur += ln + '\n';
+  }
+  if (cur !== null) hunks.push(cur);
+  return { header, hunks };
 }
 
 // ---------------------------------------------------------------------------
@@ -1191,22 +1459,744 @@ async function openDiff(repo, filePath) {
   if (res.empty) { showToast('No changes in this file.'); return; }
   const id = `d${++diffSeq}`;
   const pre = el('div', { class: 'diff-view', tabindex: '-1' });
-  for (const line of res.diff.split('\n')) {
-    let cls = 'd-ctx';
-    const c = line[0];
-    if (/^(diff |index |new file|deleted file|similarity|rename |\+\+\+|---)/.test(line)) cls = 'd-meta';
-    else if (line.startsWith('@@')) cls = 'd-hunk';
-    else if (c === '+') cls = 'd-add';
-    else if (c === '-') cls = 'd-del';
-    pre.appendChild(el('div', { class: `d-line ${cls}`, text: line || ' ' }));
-  }
+  renderDiffInto(pre, res.diff);
   const pane = el('div', { class: 'term-pane diff-pane', 'data-id': id }, pre);
   terminalsEl.appendChild(pane);
-  const session = { id, kind: 'diff', pane, focusEl: pre, label: basename(filePath), tabEl: null };
+  const session = { id, kind: 'diff', pane, focusEl: pre, label: basename(filePath), tabTitle: filePath, tabEl: null };
   sessions.set(id, session);
   attachTab(session, { tag: 'diff', tagClass: 'tab-ai diff', tabTitle: filePath });
   welcomeEl.classList.add('hidden');
   activate(id);
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// Review & stage — per-project tab: file list with staging, per-file diff,
+// commit (staged-only) and push.
+// ---------------------------------------------------------------------------
+let reviewSeq = 0;
+async function openReview(p) {
+  const repo = p.path;
+  for (const [sid, s] of sessions) {
+    if (s.kind === 'review' && s.repo === repo) { activate(sid); s.refresh(); return sid; }
+  }
+  const id = `r${++reviewSeq}`;
+
+  const filesEl = el('div', { class: 'review-files' });
+  const diffEl = el('div', { class: 'review-diff diff-view', tabindex: '-1' });
+  const stageAllBtn = el('button', { class: 'tiny-btn', text: 'Stage all' });
+  const unstageAllBtn = el('button', { class: 'tiny-btn', text: 'Unstage all' });
+  const refreshR = el('button', { class: 'tiny-btn', title: 'Refresh', text: '⟳' });
+  const head = el('div', { class: 'review-head' },
+    el('span', { class: 'review-title', text: p.name }),
+    el('div', { class: 'review-head-btns' }, stageAllBtn, unstageAllBtn, refreshR));
+
+  const msg = el('input', { class: 'review-msg', type: 'text', placeholder: 'Commit message', spellcheck: 'false', autocapitalize: 'off' });
+  const suggestBtn = el('button', { class: 'link-btn', type: 'button', text: '✦ Suggest' });
+  const commitBtn = el('button', { class: 'block-btn primary', text: 'Commit staged' });
+  const pushBtn = el('button', { class: 'block-btn', text: 'Push' });
+  const statusEl = el('div', { class: 'import-status' });
+  const foot = el('div', { class: 'review-foot' },
+    el('div', { class: 'label-row' }, el('label', { class: 'mini-label', text: 'Commit message' }), suggestBtn),
+    msg,
+    el('div', { class: 'review-actions' }, commitBtn, pushBtn),
+    statusEl);
+
+  const pane = el('div', { class: 'term-pane review-pane', 'data-id': id },
+    head, el('div', { class: 'review-body' }, filesEl, diffEl), foot);
+  terminalsEl.appendChild(pane);
+
+  let selected = null;
+  const setStatusMsg = (text, cls) => { statusEl.textContent = text || ''; statusEl.className = 'import-status' + (cls ? ' ' + cls : ''); };
+
+  // Render the file's diff with per-hunk Stage/Unstage buttons. Falls back to a
+  // plain diff for untracked/binary files (which stage as a whole via the checkbox).
+  const renderReviewDiff = (unstagedText, stagedText) => {
+    diffEl.innerHTML = '';
+    const u = splitUnifiedDiff(unstagedText);
+    const s = splitUnifiedDiff(stagedText);
+    if ((!u || !u.hunks.length) && (!s || !s.hunks.length)) {
+      window.gits.diff({ repo, file: repo + '/' + selected }).then((d) => {
+        renderDiffInto(diffEl, d.ok ? (d.empty ? '(no textual changes — use the checkbox to stage)' : d.diff) : 'No diff available.');
+      });
+      return;
+    }
+    const section = (title, parsed, label, reverse) => {
+      if (!parsed || !parsed.hunks.length) return;
+      diffEl.appendChild(el('div', { class: 'hunk-title', text: title }));
+      parsed.hunks.forEach((hunk) => {
+        const btn = el('button', { class: 'hunk-btn', text: label });
+        btn.addEventListener('click', async () => {
+          const r = await window.gits.applyHunk({ repo, patch: parsed.header + hunk, reverse });
+          if (!r.ok) setStatusMsg(r.error, 'err'); else refresh();
+        });
+        diffEl.appendChild(el('div', { class: 'hunk-head' }, btn));
+        const body = el('div', { class: 'diff-view hunk-body' });
+        renderDiffInto(body, hunk.replace(/\n$/, ''));
+        diffEl.appendChild(body);
+      });
+    };
+    section('Unstaged — stage a hunk', u, 'Stage hunk →', false);
+    section('Staged — unstage a hunk', s, '← Unstage hunk', true);
+  };
+
+  const showDiff = async (file) => {
+    selected = file;
+    [...filesEl.children].forEach((c) => c.classList && c.classList.toggle('sel', c.dataset.file === file));
+    const [u, s] = await Promise.all([
+      window.gits.fileDiff({ repo, file, staged: false }),
+      window.gits.fileDiff({ repo, file, staged: true }),
+    ]);
+    renderReviewDiff(u.diff || '', s.diff || '');
+  };
+
+  const refresh = async () => {
+    const r = await window.gits.statusFiles(repo);
+    filesEl.innerHTML = '';
+    if (!r.ok) { filesEl.appendChild(el('div', { class: 'review-empty', text: r.error || 'Not a git repo.' })); return; }
+    if (!r.files.length) {
+      filesEl.appendChild(el('div', { class: 'review-empty', text: 'No changes — working tree clean.' }));
+      diffEl.innerHTML = ''; selected = null; return;
+    }
+    for (const f of r.files) {
+      const cb = el('input', { type: 'checkbox' });
+      cb.checked = f.staged;
+      cb.indeterminate = f.staged && f.unstaged; // staged, with further unstaged edits
+      cb.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const res = cb.checked ? await window.gits.stage({ repo, file: f.file })
+                               : await window.gits.unstage({ repo, file: f.file });
+        if (!res.ok) setStatusMsg(res.error, 'err');
+        refresh();
+      });
+      const row = el('div', { class: `review-file${f.file === selected ? ' sel' : ''}`, 'data-file': f.file, title: f.file },
+        cb,
+        el('span', { class: `chg-dot chg-${f.type}` }),
+        el('span', { class: 'review-fname', text: f.file }));
+      row.addEventListener('click', () => showDiff(f.file));
+      filesEl.appendChild(row);
+    }
+    if (selected && r.files.some((f) => f.file === selected)) await showDiff(selected);
+    else await showDiff(r.files[0].file);
+  };
+
+  stageAllBtn.addEventListener('click', async () => { const r = await window.gits.stageAll(repo); if (!r.ok) setStatusMsg(r.error, 'err'); refresh(); });
+  unstageAllBtn.addEventListener('click', async () => { const r = await window.gits.unstageAll(repo); if (!r.ok) setStatusMsg(r.error, 'err'); refresh(); });
+  refreshR.addEventListener('click', refresh);
+
+  suggestBtn.addEventListener('click', async () => {
+    suggestBtn.disabled = true; const o = suggestBtn.textContent; suggestBtn.textContent = 'Thinking…';
+    const r = await window.gits.commitMessage({ repo, staged: true });
+    suggestBtn.textContent = o; suggestBtn.disabled = false;
+    if (r.ok) { msg.value = r.message; if (r.source === 'summary') setStatusMsg('Suggested from staged files (no AI CLI detected).'); }
+    else setStatusMsg(r.error || 'Could not suggest a message.', 'err');
+  });
+
+  commitBtn.addEventListener('click', async () => {
+    commitBtn.disabled = true;
+    const r = await window.gits.commitStaged({ repo, message: msg.value.trim() || 'Update via Gitsidian' });
+    commitBtn.disabled = false;
+    if (r.ok) { setStatusMsg('Committed. Push when ready.', 'ok'); msg.value = ''; refresh(); loadProjects({ fetch: false }); }
+    else setStatusMsg(r.error || 'Commit failed.', 'err');
+  });
+  pushBtn.addEventListener('click', async () => {
+    pushBtn.disabled = true; setStatusMsg('Pushing…');
+    const r = await window.gits.push(repo);
+    pushBtn.disabled = false;
+    if (r.ok) { setStatusMsg('Pushed to GitHub.', 'ok'); loadProjects({ fetch: false }); }
+    else setStatusMsg(r.error || 'Push failed.', 'err');
+  });
+
+  const session = { id, kind: 'review', repo, pane, focusEl: filesEl, label: p.name, refresh, tabEl: null };
+  sessions.set(id, session);
+  attachTab(session, { tag: 'review', tagClass: 'tab-ai review', tabTitle: repo });
+  welcomeEl.classList.add('hidden');
+  activate(id);
+  await refresh();
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// Commit history — per-project log; click a commit to see its diff.
+// ---------------------------------------------------------------------------
+let historySeq = 0;
+async function openHistory(p) {
+  const repo = p.path;
+  for (const [sid, s] of sessions) {
+    if (s.kind === 'history' && s.repo === repo) { activate(sid); return sid; }
+  }
+  const id = `h${++historySeq}`;
+  const listEl = el('div', { class: 'history-list' });
+  const diffEl = el('div', { class: 'history-diff diff-view', tabindex: '-1' });
+  const pane = el('div', { class: 'term-pane history-pane', 'data-id': id },
+    el('div', { class: 'review-body' }, listEl, diffEl));
+  terminalsEl.appendChild(pane);
+
+  const r = await window.gits.log({ repo, limit: 200 });
+  if (!r.ok) {
+    listEl.appendChild(el('div', { class: 'review-empty', text: r.error || 'Not a git repo.' }));
+  } else if (!r.commits.length) {
+    listEl.appendChild(el('div', { class: 'review-empty', text: 'No commits yet.' }));
+  } else {
+    const show = async (c, row) => {
+      [...listEl.children].forEach((x) => x.classList && x.classList.remove('sel'));
+      row.classList.add('sel');
+      const d = await window.gits.commitDiff({ repo, hash: c.hash });
+      renderDiffInto(diffEl, d.ok ? d.diff : (d.error || 'Could not load commit.'));
+    };
+    r.commits.forEach((c, i) => {
+      const row = el('div', { class: 'history-item', title: c.hash },
+        el('span', { class: 'history-hash', text: c.short }),
+        el('span', { class: 'history-subject', text: c.subject }),
+        el('span', { class: 'history-meta', text: `${c.author} · ${c.date}` }));
+      row.addEventListener('click', () => show(c, row));
+      listEl.appendChild(row);
+      if (i === 0) show(c, row); // preview the newest commit
+    });
+  }
+
+  const session = { id, kind: 'history', repo, pane, focusEl: listEl, label: `${p.name} · log`, tabEl: null };
+  sessions.set(id, session);
+  attachTab(session, { tag: 'log', tagClass: 'tab-ai history', tabTitle: repo });
+  welcomeEl.classList.add('hidden');
+  activate(id);
+  return id;
+}
+
+// Open a file in the editor and jump to a line (used by search results).
+async function openEditorAt(filePath, line) {
+  if (IMAGE_EXTS.test(filePath)) return openImagePreview(filePath);
+  const id = await openEditor(filePath);
+  const s = id && sessions.get(id);
+  if (s && s.cm) {
+    const ln = Math.max(0, (line || 1) - 1);
+    requestAnimationFrame(() => {
+      s.cm.refresh();
+      s.cm.setCursor({ line: ln, ch: 0 });
+      s.cm.scrollIntoView({ line: ln, ch: 0 }, 120);
+      s.cm.focus();
+    });
+  }
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-file search — a per-project tab; click a match to open it at that line.
+// ---------------------------------------------------------------------------
+let searchSeq = 0;
+async function openSearch(root) {
+  root = root || activeProjectRoot();
+  if (!root) { showToast('Open a project first.'); return; }
+  for (const [sid, s] of sessions) {
+    if (s.kind === 'search' && s.root === root) { activate(sid); s.focusInput(); return sid; }
+  }
+  const id = `f${++searchSeq}`;
+  const proj = projectIndex.get(root);
+  const input = el('input', { class: 'search-input', type: 'text', placeholder: `Search in ${proj ? proj.name : basename(root)}…`, spellcheck: 'false', autocapitalize: 'off' });
+  const info = el('span', { class: 'search-info' });
+  const resultsEl = el('div', { class: 'search-results' });
+  const pane = el('div', { class: 'term-pane search-pane', 'data-id': id },
+    el('div', { class: 'search-head' }, input, info), resultsEl);
+  terminalsEl.appendChild(pane);
+
+  let timer = null;
+  const doSearch = async () => {
+    const q = input.value.trim();
+    resultsEl.innerHTML = '';
+    if (!q) { info.textContent = ''; return; }
+    info.textContent = 'Searching…';
+    const r = await window.gits.search({ root, query: q });
+    if (!r.ok) { info.textContent = 'Search failed.'; return; }
+    info.textContent = `${r.results.length}${r.truncated ? '+' : ''} match${r.results.length === 1 ? '' : 'es'}`;
+    const byFile = new Map();
+    for (const m of r.results) { if (!byFile.has(m.file)) byFile.set(m.file, []); byFile.get(m.file).push(m); }
+    for (const [file, ms] of byFile) {
+      resultsEl.appendChild(el('div', { class: 'search-file', text: `${file}  (${ms.length})` }));
+      for (const m of ms) {
+        const row = el('div', { class: 'search-match' },
+          el('span', { class: 'search-ln', text: String(m.line) }),
+          el('span', { class: 'search-text', text: m.text.trim() }));
+        row.addEventListener('click', () => openEditorAt(root + '/' + file, m.line));
+        resultsEl.appendChild(row);
+      }
+    }
+  };
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(doSearch, 250); });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(timer); doSearch(); } });
+
+  const session = { id, kind: 'search', root, pane, focusEl: input, focusInput: () => input.focus(), label: `Search · ${proj ? proj.name : basename(root)}`, tabEl: null };
+  sessions.set(id, session);
+  attachTab(session, { tag: 'search', tagClass: 'tab-ai search', tabTitle: root });
+  welcomeEl.classList.add('hidden');
+  activate(id);
+  input.focus();
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// Team chat — messages are comments on one issue in a private hub repo; the
+// signed-in GitHub account is the identity. Once a team is configured, the chat
+// runs automatically from launch: a background poller keeps an unread badge on
+// the sidebar chat button, and opening the tab shows messages already loaded.
+// ---------------------------------------------------------------------------
+// A "channel" is one repo's chat (the "Gitsidian Team Chat" issue in that repo).
+// Config: { channels: [{repo, issue, visibility}], active: repo, seen: {repo: id} }.
+let chatSeq = 0;
+let teamMe = null;            // your GitHub login
+let teamChannels = [];        // [{ repo, issue, visibility }]
+let teamActive = null;        // active channel repo (owner/name)
+let teamSeen = {};            // { repo: lastSeenId }
+let teamMsgs = [];            // active channel messages (deduped, oldest-first)
+let teamFetchedIds = new Set();
+let teamPollTimer = null;
+let teamChatId = null;        // chat tab session id
+let teamListEl = null;        // active channel's message list DOM
+let teamChannelsEl = null;    // channel list DOM
+let teamMainEl = null;        // conversation/setup area DOM
+let teamAdding = false;       // showing the add-channel form?
+
+function relTime(iso) {
+  const t = new Date(iso).getTime();
+  if (!t) return '';
+  const s = Math.floor((Date.now() - t) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+// Detect a command proposal embedded in a chat message (a ```gitsidian-run``` block).
+function parseCommand(body) {
+  const m = (body || '').match(/```gitsidian-run\s*\n([\s\S]*?)\n```/);
+  if (!m) return null;
+  try {
+    const o = JSON.parse(m[1]);
+    if (o && o.v === 1 && o.repo && o.ai && typeof o.prompt === 'string') return o;
+  } catch {}
+  return null;
+}
+
+// Flag AI prompts that try to smuggle in dangerous shell-style actions.
+function riskyReason(text) {
+  const t = (text || '').toLowerCase();
+  const checks = [
+    [/rm\s+-[rf]{1,2}\b/, 'recursive delete (rm -rf)'],
+    [/\bsudo\b/, 'sudo'],
+    [/(curl|wget)[^\n]*\|\s*(sh|bash|zsh)/, 'pipe-to-shell'],
+    [/\bmkfs\b|dd\s+if=|>\s*\/dev\/sd/, 'disk write'],
+    [/:\(\)\s*\{.*\};/, 'fork bomb'],
+    [/chmod\s+-?r?\s*777/, 'chmod 777'],
+    [/\.ssh\/|id_rsa|id_ed25519|\.aws\/|\.env\b|credentials/, 'secrets/keys access'],
+    [/base64\s+-d|eval\s+\$\(|\$\(curl/, 'obfuscated execution'],
+    [/git\s+push[^\n]*--force|reset\s+--hard|git\s+clean\s+-[a-z]*f/, 'destructive git'],
+  ];
+  for (const [re, reason] of checks) if (re.test(t)) return reason;
+  return null;
+}
+
+// Find a locally-cloned project whose GitHub remote matches owner/name.
+async function findLocalProjectForRepo(nameWithOwner) {
+  const want = (nameWithOwner || '').toLowerCase();
+  for (const p of projectIndex.values()) {
+    const url = await window.gits.webUrl(p.path);
+    const mm = url && url.toLowerCase().match(/github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/);
+    if (mm && mm[1] === want) return p;
+  }
+  return null;
+}
+async function repoNameWithOwner(p) {
+  const url = await window.gits.webUrl(p);
+  const m = url && url.match(/github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/i);
+  return m ? m[1] : null;
+}
+
+// Approve a proposed command: stage its prompt in the matching repo's session
+// (the human presses Enter to actually run it — the final gate).
+async function runProposedCommand(cmd) {
+  if (!settings.allowChatCommands) {
+    showToast('Turn on “Allow approved chat commands” in Settings to run this.');
+    return false;
+  }
+  const proj = await findLocalProjectForRepo(cmd.repo);
+  if (!proj) { showToast(`You don't have ${cmd.repo} cloned locally — can't run this here.`); return false; }
+  const risk = riskyReason(cmd.prompt);
+  if (risk && !confirm(`This proposed prompt looks risky (${risk}).\n\nIt will be placed in a ${cmd.ai} session in "${proj.name}" for you to review before it runs. Continue?`)) {
+    return false;
+  }
+  // Reuse a live session for this repo+AI if one exists, else open a new one.
+  let id = ([...sessions.values()].find((s) => s.kind === 'term' && s.cwd === proj.path && s.ai === cmd.ai && s.status !== 'dead') || {}).id;
+  if (!id) id = await openSession(proj.path, proj.name, cmd.ai);
+  const s = sessions.get(id);
+  if (s && s.composerText) {
+    s.composerText.value = cmd.prompt;
+    s.composerText.dispatchEvent(new Event('input'));
+    activate(id);
+    s.composerText.focus();
+    showToast(`Prompt staged in ${proj.name} (${cmd.ai}) — review and press Enter to run.`);
+    return true;
+  }
+  showToast('Could not open a session for that repo.');
+  return false;
+}
+
+// Propose an AI command: pick a repo (from your projects) + AI + prompt, post it.
+function openProposeModal(channel) {
+  const projects = [...projectIndex.values()].filter((p) => p.git && p.git.isRepo);
+  if (!projects.length) { showToast('Open a git project first — a command targets a repo.'); return; }
+  const repoSel = el('select', { class: 'prompt-input' });
+  for (const p of projects) repoSel.appendChild(el('option', { value: p.path }, p.name));
+  const aiSel = el('select', { class: 'prompt-input' });
+  for (const a of ais.filter((a) => a.installed && a.id !== 'shell')) aiSel.appendChild(el('option', { value: a.id }, a.name));
+  if (!aiSel.children.length) aiSel.appendChild(el('option', { value: 'claude' }, 'Claude Code'));
+  const promptTa = el('textarea', { class: 'prompt-input', rows: '4', placeholder: 'Prompt for the AI — e.g. “add unit tests for the auth module”', spellcheck: 'false' });
+  const okBtn = el('button', { class: 'block-btn primary', text: 'Propose' });
+  const cancelBtn = el('button', { class: 'block-btn', text: 'Cancel' });
+  const overlay = el('div', { class: 'modal prompt-modal' },
+    el('div', { class: 'modal-card' },
+      el('p', { class: 'prompt-msg', text: 'Propose an AI command for a teammate to approve & run. (AI prompts only — no shell.)' }),
+      el('label', { class: 'mini-label', text: 'Repo' }), repoSel,
+      el('label', { class: 'mini-label', text: 'AI' }), aiSel,
+      el('label', { class: 'mini-label', text: 'Prompt' }), promptTa,
+      el('div', { class: 'modal-actions' }, cancelBtn, okBtn)));
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  cancelBtn.addEventListener('click', close);
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+  setTimeout(() => promptTa.focus(), 0);
+  okBtn.addEventListener('click', async () => {
+    const prompt = promptTa.value.trim();
+    if (!prompt) { promptTa.focus(); return; }
+    okBtn.disabled = true;
+    const nwo = await repoNameWithOwner(repoSel.value);
+    if (!nwo) { showToast('That project has no GitHub remote — publish it so teammates can match it.'); okBtn.disabled = false; return; }
+    const name = (projectIndex.get(repoSel.value) || {}).name || nwo.split('/')[1];
+    const payload = { v: 1, repo: nwo, name, ai: aiSel.value, prompt };
+    const body = `**Command proposal** — run in \`${nwo}\` with \`${aiSel.value}\`:\n\n\`\`\`gitsidian-run\n${JSON.stringify(payload)}\n\`\`\``;
+    const r = await window.gits.chatPost({ repo: channel.repo, issue: channel.issue, body });
+    okBtn.disabled = false;
+    if (!r.ok) { showToast(r.error || 'Could not post the proposal.'); return; }
+    close();
+    teamFetch({});
+  });
+}
+
+// A command-proposal card (replaces the normal message bubble).
+function chatCommandCard(m, me, cmd) {
+  const mine = m.login === me;
+  const risk = riskyReason(cmd.prompt);
+  const card = el('div', { class: `cmd-card${risk ? ' risky' : ''}` });
+  card.appendChild(el('div', { class: 'cmd-head' },
+    el('span', { class: 'cmd-zap', text: '⚡' }),
+    el('span', { class: 'cmd-who', text: mine ? 'You proposed a command' : `${m.login} proposes a command` }),
+    el('span', { class: 'chat-time', text: relTime(m.at) })));
+  card.appendChild(el('div', { class: 'cmd-target', text: `Run in ${cmd.repo} · ${cmd.ai}` }));
+  card.appendChild(el('pre', { class: 'cmd-prompt', text: cmd.prompt }));
+  if (risk) card.appendChild(el('div', { class: 'cmd-risk', text: `⚠ Looks risky: ${risk}. Review carefully.` }));
+  const approve = el('button', { class: 'block-btn primary', text: mine ? 'Run here' : 'Approve & open' });
+  const dismiss = el('button', { class: 'block-btn', text: 'Dismiss' });
+  approve.addEventListener('click', async () => {
+    approve.disabled = true;
+    const ok = await runProposedCommand(cmd);
+    if (ok) { card.classList.add('done'); approve.textContent = 'Staged ✓'; dismiss.textContent = 'Close'; }
+    else approve.disabled = false;
+  });
+  dismiss.addEventListener('click', () => card.remove());
+  card.appendChild(el('div', { class: 'cmd-actions' }, dismiss, approve));
+  return el('div', { class: `chat-msg${mine ? ' me' : ''}` }, el('div', { class: 'chat-bubble cmd-bubble' }, card));
+}
+
+function chatMsgEl(m, me) {
+  const cmd = parseCommand(m.body);
+  if (cmd) return chatCommandCard(m, me, cmd);
+  const av = el('img', { class: 'chat-avatar', src: m.avatar || '', alt: m.login, referrerpolicy: 'no-referrer' });
+  const bodyHtml = renderMarkdown(m.body || '')
+    .replace(/(^|[\s(>])@([a-zA-Z0-9-]+)/g, '$1<span class="mention">@$2</span>');
+  const mentionsMe = me && new RegExp('@' + me + '\\b', 'i').test(m.body || '');
+  const bubble = el('div', { class: 'chat-bubble' },
+    el('div', { class: 'chat-meta' }, el('span', { class: 'chat-login', text: m.login }), el('span', { class: 'chat-time', text: relTime(m.at) })),
+    el('div', { class: 'chat-body', html: bodyHtml }));
+  return el('div', { class: `chat-msg${m.login === me ? ' me' : ''}${mentionsMe ? ' mention-me' : ''}` }, av, bubble);
+}
+
+const activeChannel = () => teamChannels.find((c) => c.repo === teamActive) || null;
+
+// Load config, migrating the old single-channel shape to the channels model.
+async function loadTeam() {
+  const cfg = await window.gits.teamConfig();
+  if (Array.isArray(cfg.channels)) {
+    teamChannels = cfg.channels;
+    teamActive = cfg.active || (cfg.channels[0] && cfg.channels[0].repo) || null;
+    teamSeen = cfg.seen || {};
+  } else if (cfg.repo && cfg.issue) {
+    teamChannels = [{ repo: cfg.repo, issue: cfg.issue, visibility: cfg.visibility || null }];
+    teamActive = cfg.repo;
+    teamSeen = { [cfg.repo]: cfg.lastSeenId || 0 };
+    await saveTeam();
+  } else {
+    teamChannels = []; teamActive = null; teamSeen = {};
+  }
+}
+function saveTeam() {
+  return window.gits.teamConfig({ channels: teamChannels, active: teamActive, seen: teamSeen, repo: null, issue: null, lastSeenId: null, visibility: null });
+}
+
+function setChatBadge(n) {
+  const btn = document.getElementById('open-team');
+  if (!btn) return;
+  let b = btn.querySelector('.chat-badge');
+  if (!b) { b = el('span', { class: 'chat-badge' }); btn.appendChild(b); }
+  if (n > 0) { b.textContent = n > 99 ? '99+' : String(n); b.classList.add('on'); }
+  else b.classList.remove('on');
+}
+function refreshChatBadge() {
+  const last = (teamActive && teamSeen[teamActive]) || 0;
+  setChatBadge(teamMsgs.filter((m) => m.id > last && m.login !== teamMe).length);
+}
+function markSeen() {
+  if (!teamActive) return;
+  teamSeen[teamActive] = teamMsgs.reduce((mx, m) => Math.max(mx, m.id), teamSeen[teamActive] || 0);
+  saveTeam();
+  refreshChatBadge();
+}
+function notifyChat(m) {
+  try {
+    const n = new Notification(`Gitsidian — ${m.login}`, { body: (m.body || '').slice(0, 140) });
+    n.onclick = () => { openTeamChat(); window.focus(); };
+  } catch {}
+}
+
+// Poll the active channel for new messages.
+async function teamFetch({ initial = false } = {}) {
+  const ch = activeChannel();
+  if (!ch) return;
+  const r = await window.gits.chatList({ repo: ch.repo, issue: ch.issue });
+  if (!r.ok) return;
+  const fresh = [];
+  for (const m of r.messages || []) {
+    if (teamFetchedIds.has(m.id)) continue;
+    teamFetchedIds.add(m.id); teamMsgs.push(m); fresh.push(m);
+  }
+  if (teamListEl) {
+    for (const m of fresh) teamListEl.appendChild(chatMsgEl(m, teamMe));
+    if (fresh.length) teamListEl.scrollTop = teamListEl.scrollHeight;
+  }
+  const chatVisible = teamChatId && activeId === teamChatId && !document.hidden && !teamAdding;
+  if (initial && teamSeen[teamActive] == null) { markSeen(); }      // first connect — don't flag all history
+  else if (chatVisible) { markSeen(); }
+  else {
+    refreshChatBadge();
+    const incoming = fresh.filter((m) => m.login !== teamMe);
+    if (!initial && incoming.length) notifyChat(incoming[incoming.length - 1]);
+  }
+}
+
+function ensureTeamPolling() {
+  if (!teamPollTimer && teamChannels.length) teamPollTimer = setInterval(() => teamFetch({}), 15000);
+}
+
+// Load the active channel's messages (cache first, then live).
+async function loadActiveChannel() {
+  teamMsgs = []; teamFetchedIds = new Set();
+  const ch = activeChannel();
+  if (!ch) return;
+  const cache = await window.gits.chatCache({ repo: ch.repo, issue: ch.issue });
+  for (const m of (cache.messages || [])) if (!teamFetchedIds.has(m.id)) { teamFetchedIds.add(m.id); teamMsgs.push(m); }
+  if (teamListEl) { teamListEl.innerHTML = ''; for (const m of teamMsgs) teamListEl.appendChild(chatMsgEl(m, teamMe)); teamListEl.scrollTop = teamListEl.scrollHeight; }
+  await teamFetch({ initial: true });
+}
+
+function switchChannel(repo) {
+  if (repo === teamActive && !teamAdding) return;
+  teamAdding = false;
+  teamActive = repo;
+  saveTeam();
+  renderChannels();
+  renderChatMain();
+  loadActiveChannel();
+}
+
+// Add a channel for `repo` (creating the chat issue); warns if the repo is public.
+async function addChannel(repo) {
+  repo = (repo || '').trim();
+  if (!repo.includes('/')) { showToast('Enter the repo as owner/name.'); return; }
+  if (teamChannels.some((c) => c.repo === repo)) { switchChannel(repo); return; }
+  showToast('Setting up channel…');
+  const init = await window.gits.chatInit(repo);
+  if (!init.ok) { showToast(init.error || 'Could not set up that channel.'); return; }
+  if (init.visibility === 'PUBLIC' &&
+      !confirm(`"${repo}" is PUBLIC — anyone on the internet can read these messages.\n\nAdd it anyway? (For private chat, use a private repo instead.)`)) {
+    return;
+  }
+  teamChannels.push({ repo, issue: init.issue, visibility: init.visibility || null });
+  teamActive = repo;
+  teamAdding = false;
+  if (!(repo in teamSeen)) teamSeen[repo] = null;
+  await saveTeam();
+  ensureTeamPolling();
+  renderChannels();
+  renderChatMain();
+  loadActiveChannel();
+}
+
+// The setup / add-a-channel form (clear visible options — no native dialogs).
+function chatSetupForm() {
+  const wrap = el('div', { class: 'chat-setup' });
+  wrap.appendChild(el('p', { class: 'chat-setup-intro', text: 'A channel is one private GitHub repo (your GitHub account is your identity). Pick one:' }));
+
+  const newName = el('input', { class: 'prompt-input', value: 'gitsidian-team', placeholder: 'new repo name' });
+  const createBtn = el('button', { class: 'block-btn primary', text: 'Create private repo' });
+  createBtn.addEventListener('click', async () => {
+    const name = newName.value.trim(); if (!name) return;
+    createBtn.disabled = true; showToast('Creating private team repo…');
+    const c = await window.gits.teamCreateRepo(name);
+    createBtn.disabled = false;
+    if (!c.ok) { showToast(c.error || 'Could not create the repo.'); return; }
+    addChannel(c.repo);
+  });
+  wrap.appendChild(el('div', { class: 'chat-setup-row' },
+    el('label', { class: 'mini-label', text: 'Create a new private repo' }),
+    el('div', { class: 'chat-setup-line' }, newName, createBtn)));
+
+  wrap.appendChild(el('div', { class: 'chat-setup-or', text: 'or' }));
+
+  const exRepo = el('input', { class: 'prompt-input', placeholder: 'owner/name of an existing repo' });
+  const connectBtn = el('button', { class: 'block-btn', text: 'Connect' });
+  connectBtn.addEventListener('click', () => addChannel(exRepo.value));
+  exRepo.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addChannel(exRepo.value); } });
+  wrap.appendChild(el('div', { class: 'chat-setup-row' },
+    el('label', { class: 'mini-label', text: 'Use an existing repo you own (private recommended)' }),
+    el('div', { class: 'chat-setup-line' }, exRepo, connectBtn)));
+
+  if (teamChannels.length) {
+    const cancel = el('button', { class: 'link-btn', text: 'Cancel' });
+    cancel.addEventListener('click', () => { teamAdding = false; renderChannels(); renderChatMain(); });
+    wrap.appendChild(cancel);
+  }
+  return wrap;
+}
+
+// Left column: the list of channels + "Add channel".
+function renderChannels() {
+  if (!teamChannelsEl) return;
+  teamChannelsEl.innerHTML = '';
+  teamChannelsEl.appendChild(el('div', { class: 'chat-channels-head', text: 'Channels' }));
+  for (const c of teamChannels) {
+    const last = teamSeen[c.repo] || 0;
+    const unread = (c.repo === teamActive ? teamMsgs : []).filter((m) => m.id > last && m.login !== teamMe).length;
+    const row = el('div', { class: `chat-channel${c.repo === teamActive && !teamAdding ? ' active' : ''}`, title: c.repo },
+      el('span', { class: 'chat-channel-name', text: c.repo.split('/')[1] || c.repo }),
+      c.visibility === 'PUBLIC' ? el('span', { class: 'chat-channel-tag', text: 'public', title: 'Public — world-readable' }) : null,
+      unread ? el('span', { class: 'chat-channel-dot' }) : null);
+    row.addEventListener('click', () => switchChannel(c.repo));
+    teamChannelsEl.appendChild(row);
+  }
+  const add = el('button', { class: `chat-channel-add${teamAdding ? ' active' : ''}`, text: '+ Add channel' });
+  add.addEventListener('click', () => { teamAdding = true; renderChannels(); renderChatMain(); });
+  teamChannelsEl.appendChild(add);
+}
+
+// Right column: the conversation for the active channel, or the setup form.
+function renderChatMain() {
+  if (!teamMainEl) return;
+  teamMainEl.innerHTML = '';
+  teamListEl = null;
+  if (teamAdding || !teamChannels.length) { teamMainEl.appendChild(chatSetupForm()); return; }
+  const ch = activeChannel();
+  if (!ch) { teamMainEl.appendChild(el('div', { class: 'chat-empty', text: 'Pick a channel on the left.' })); return; }
+
+  const inviteBtn = el('button', { class: 'tiny-btn', title: 'Invite by GitHub username or email', text: '+ Invite' });
+  inviteBtn.addEventListener('click', async () => {
+    const v = await uiPrompt('Invite by GitHub username — or an email (for someone without a GitHub account):', '');
+    if (!v) return;
+    const val = v.trim();
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(val)) {
+      window.gits.openUrl(`https://github.com/${ch.repo}/settings/access`);
+      showToast(`Opened GitHub access — add ${val} there. No account? GitHub emails them and walks them through sign-up.`);
+      return;
+    }
+    const r = await window.gits.teamInvite({ repo: ch.repo, username: val });
+    showToast(r.ok ? `Invited ${r.user}.` : (r.error || 'Could not invite.'));
+  });
+  teamMainEl.appendChild(el('div', { class: 'chat-main-head' },
+    el('span', { class: 'chat-title', text: ch.repo }), inviteBtn));
+  if (ch.visibility === 'PUBLIC') {
+    teamMainEl.appendChild(el('div', { class: 'chat-warn', text: 'Public repo — these messages are visible to anyone on the internet.' }));
+  }
+
+  const list = el('div', { class: 'chat-list' });
+  teamListEl = list;
+  list.addEventListener('click', (e) => {
+    const a = e.target.closest('a');
+    if (a) { e.preventDefault(); const h = a.getAttribute('href'); if (/^https?:\/\//.test(h)) window.gits.openUrl(h); }
+  });
+  const input = el('textarea', { class: 'chat-input', rows: '1', placeholder: 'Message · Enter sends · Shift+Enter newline · @mention, **markdown** ok', spellcheck: 'false', autocapitalize: 'off' });
+  const sendBtn = el('button', { class: 'send-btn', text: 'Send ▸' });
+  const autoGrow = () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 120) + 'px'; };
+  const send = async () => {
+    const body = input.value.trim(); if (!body) return;
+    input.value = ''; autoGrow();
+    sendBtn.disabled = true;
+    const r = await window.gits.chatPost({ repo: ch.repo, issue: ch.issue, body });
+    sendBtn.disabled = false;
+    if (!r.ok) { showToast(r.error || 'Could not send.'); input.value = body; autoGrow(); return; }
+    teamFetch({});
+    input.focus();
+  };
+  input.addEventListener('input', autoGrow);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+  sendBtn.addEventListener('click', send);
+  const proposeBtn = el('button', { class: 'tiny-btn cmd-propose', title: 'Propose an AI command for a teammate to approve & run', text: '⚡' });
+  proposeBtn.addEventListener('click', () => openProposeModal(ch));
+  teamMainEl.append(list, el('div', { class: 'chat-foot' }, proposeBtn, input, sendBtn));
+
+  for (const m of teamMsgs) list.appendChild(chatMsgEl(m, teamMe));
+  list.scrollTop = list.scrollHeight;
+  setTimeout(() => input.focus(), 0);
+}
+
+// Runs at launch: if channels are configured, connect the active one in the background.
+async function startTeamBackground() {
+  await loadTeam();
+  if (!teamChannels.length || !teamActive) return;
+  const who = await window.gits.teamWhoami();
+  teamMe = who.ok ? who.login : null;
+  const ch = activeChannel();
+  if (ch) {
+    const cache = await window.gits.chatCache({ repo: ch.repo, issue: ch.issue });
+    for (const m of (cache.messages || [])) if (!teamFetchedIds.has(m.id)) { teamFetchedIds.add(m.id); teamMsgs.push(m); }
+    refreshChatBadge();
+    await teamFetch({ initial: true });
+  }
+  ensureTeamPolling();
+}
+
+async function openTeamChat() {
+  if (!teamChannels.length && !teamActive) await loadTeam();
+  if (!teamMe) { const who = await window.gits.teamWhoami(); teamMe = who.ok ? who.login : null; }
+  for (const [sid, s] of sessions) if (s.kind === 'chat') { activate(sid); return sid; }
+
+  const id = `c${++chatSeq}`;
+  teamChatId = id;
+  teamChannelsEl = el('div', { class: 'chat-channels' });
+  teamMainEl = el('div', { class: 'chat-main' });
+  const pane = el('div', { class: 'term-pane chat-pane', 'data-id': id },
+    el('div', { class: 'chat-head' },
+      el('span', { class: 'chat-title', text: 'Team chat' }),
+      el('div', { class: 'chat-head-right' }, el('span', { class: 'chat-sub', text: teamMe ? `you: ${teamMe}` : '' }))),
+    el('div', { class: 'chat-body2' }, teamChannelsEl, teamMainEl));
+  terminalsEl.appendChild(pane);
+
+  const session = { id, kind: 'chat', pane, focusEl: teamMainEl, label: 'Team chat', tabEl: null };
+  sessions.set(id, session);
+  attachTab(session, { tag: 'chat', tagClass: 'tab-ai chat', tabTitle: 'Team chat' });
+  welcomeEl.classList.add('hidden');
+  activate(id);
+
+  teamAdding = false;
+  renderChannels();
+  renderChatMain();
+  if (teamActive) loadActiveChannel();
+  ensureTeamPolling();
   return id;
 }
 
@@ -1263,6 +2253,27 @@ window.gits.onPtyStatus(({ id, busy, alive }) => {
       notifyFinished(s);
     }
     s.busyStart = null;
+  }
+});
+
+// A watched file changed on disk (e.g. an AI agent edited it). Reload the editor
+// if there are no unsaved edits; otherwise keep the user's edits and warn.
+window.gits.onFileChanged(async ({ path }) => {
+  for (const s of sessions.values()) {
+    if (s.kind !== 'editor' || s.filePath !== path || !s.cm) continue;
+    const r = await window.gits.readFile(path);
+    if (!r.ok) continue;
+    if (r.content === s.cm.getValue()) { s.savedContent = r.content; continue; } // our own save / no real change
+    if (s.dirty) { showToast(`"${s.label}" changed on disk — your unsaved edits are kept.`); continue; }
+    const cur = s.cm.getCursor();
+    s.reloading = true;
+    s.cm.setValue(r.content);
+    s.reloading = false;
+    s.savedContent = r.content;
+    try { s.cm.setCursor(cur); } catch {}
+    s.dirty = false;
+    if (s.tabEl) s.tabEl.classList.remove('dirty');
+    showToast(`Reloaded "${s.label}" (changed on disk).`);
   }
 });
 
@@ -1353,6 +2364,7 @@ splitDivider.addEventListener('mousedown', (e) => {
 // ---------------------------------------------------------------------------
 refreshBtn.addEventListener('click', () => loadProjects({ fetch: true }));
 document.getElementById('new-group').addEventListener('click', () => addGroup());
+document.getElementById('open-team').addEventListener('click', () => openTeamChat());
 
 addFolderBtn.addEventListener('click', async () => {
   const res = await window.gits.addFolder();
@@ -1998,6 +3010,8 @@ document.getElementById('open-settings').addEventListener('click', () => {
   const auto = document.getElementById('settings-autoupdate');
   auto.checked = settings.autoUpdate;
   auto.onchange = () => { settings.autoUpdate = auto.checked; saveSettings(); };
+  const cmds = document.getElementById('settings-chatcommands');
+  if (cmds) { cmds.checked = settings.allowChatCommands; cmds.onchange = () => { settings.allowChatCommands = cmds.checked; saveSettings(); }; }
   const ver = document.getElementById('settings-version');
   window.gits.appVersion().then((v) => { ver.textContent = `Current version ${v}`; });
   const checkBtn = document.getElementById('settings-check-update');
@@ -2016,6 +3030,141 @@ document.getElementById('settings-close').addEventListener('click', () => settin
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Command palette (Cmd/Ctrl+P) — fuzzy-open files in the active project + actions.
+// ---------------------------------------------------------------------------
+let paletteEl = null, paletteInput = null, paletteListEl = null;
+let paletteFiles = [], paletteRoot = null, paletteRows = [], paletteSel = 0;
+
+// Which project the palette searches: the active tab's repo/cwd/file, else the first.
+function activeProjectRoot() {
+  const roots = [...projectIndex.keys()];
+  const under = (p) => roots.find((r) => p === r || p.startsWith(r + '/'));
+  const s = sessions.get(activeId);
+  if (s) {
+    if (s.repo) return s.repo;
+    if (s.cwd) return under(s.cwd) || s.cwd;
+    if (s.filePath) return under(s.filePath) || null;
+  }
+  return roots[0] || null;
+}
+
+// Subsequence fuzzy score; -1 when q isn't a subsequence of s. Adjacent hits score higher.
+function fuzzyScore(q, s) {
+  if (!q) return 0;
+  q = q.toLowerCase(); s = s.toLowerCase();
+  let qi = 0, score = 0, prev = -2;
+  for (let i = 0; i < s.length && qi < q.length; i++) {
+    if (s[i] === q[qi]) { score += (i === prev + 1 ? 3 : 1); prev = i; qi++; }
+  }
+  return qi === q.length ? score : -1;
+}
+
+function paletteActions() {
+  const proj = paletteRoot ? projectIndex.get(paletteRoot) : null;
+  const acts = [
+    { label: 'New terminal here', run: () => openSession(paletteRoot || undefined, proj ? proj.name : 'terminal') },
+    { label: 'Search in project…', run: () => openSearch(paletteRoot) },
+    { label: 'Team chat', run: () => openTeamChat() },
+    { label: 'Settings…', run: () => document.getElementById('open-settings').click() },
+    { label: `Switch to ${settings.theme === 'light' ? 'dark' : 'light'} theme`, run: () => { settings.theme = settings.theme === 'light' ? 'dark' : 'light'; saveSettings(); applyTheme(); } },
+    { label: 'Check for updates', run: () => checkForUpdates({ silent: false }) },
+  ];
+  if (proj && proj.git && proj.git.isRepo) {
+    acts.push({ label: `Review changes — ${proj.name}`, run: () => openReview(proj) });
+    acts.push({ label: `Commit history — ${proj.name}`, run: () => openHistory(proj) });
+    acts.push({ label: `Pull request — ${proj.name}`, run: () => openPrFlow(proj) });
+  }
+  return acts.map((a) => ({ ...a, kind: 'action' }));
+}
+
+function buildPaletteDom() {
+  paletteInput = el('input', { class: 'palette-input', type: 'text', placeholder: 'Go to file…  (or type a command)', spellcheck: 'false', autocapitalize: 'off' });
+  paletteListEl = el('div', { class: 'palette-list' });
+  paletteEl = el('div', { class: 'palette hidden' }, el('div', { class: 'palette-card' }, paletteInput, paletteListEl));
+  document.body.appendChild(paletteEl);
+  paletteEl.addEventListener('click', (e) => { if (e.target === paletteEl) closePalette(); });
+  paletteInput.addEventListener('input', () => renderPalette(paletteInput.value));
+  paletteInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closePalette(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); moveSel(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSel(-1); }
+    else if (e.key === 'Enter') { e.preventDefault(); choose(paletteSel); }
+  });
+}
+
+function moveSel(d) {
+  if (!paletteRows.length) return;
+  paletteSel = (paletteSel + d + paletteRows.length) % paletteRows.length;
+  [...paletteListEl.children].forEach((c, i) => c.classList.toggle('sel', i === paletteSel));
+  const sel = paletteListEl.children[paletteSel];
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+function renderPalette(query) {
+  const q = query.trim();
+  const acts = paletteActions().map((a) => ({ ...a, score: fuzzyScore(q, a.label) })).filter((a) => a.score >= 0);
+  const files = [];
+  for (const f of paletteFiles) {
+    const score = fuzzyScore(q, f);
+    if (score >= 0) files.push({ label: f, kind: 'file', path: paletteRoot + '/' + f, score });
+  }
+  files.sort((a, b) => b.score - a.score);
+  acts.sort((a, b) => b.score - a.score);
+  paletteRows = [...acts, ...files].slice(0, 60);
+  paletteSel = 0;
+  paletteListEl.innerHTML = '';
+  if (!paletteRows.length) { paletteListEl.appendChild(el('div', { class: 'palette-empty', text: 'No matches' })); return; }
+  paletteRows.forEach((r, i) => {
+    const row = el('div', { class: `palette-row${i === 0 ? ' sel' : ''}` },
+      el('span', { class: `palette-kind ${r.kind}`, text: r.kind === 'action' ? '▸' : '·' }),
+      el('span', { class: 'palette-label', text: r.label }));
+    row.addEventListener('click', () => choose(i));
+    paletteListEl.appendChild(row);
+  });
+}
+
+function choose(i) {
+  const r = paletteRows[i];
+  if (!r) return;
+  closePalette();
+  if (r.kind === 'action') r.run();
+  else if (IMAGE_EXTS.test(r.label)) openImagePreview(r.path);
+  else openEditor(r.path);
+}
+
+function closePalette() { if (paletteEl) paletteEl.classList.add('hidden'); }
+
+async function openPalette() {
+  paletteRoot = activeProjectRoot();
+  if (!paletteEl) buildPaletteDom();
+  paletteEl.classList.remove('hidden');
+  paletteInput.value = '';
+  paletteInput.focus();
+  paletteFiles = [];
+  renderPalette('');
+  if (paletteRoot) {
+    const r = await window.gits.projFiles(paletteRoot);
+    if (r.ok && !paletteEl.classList.contains('hidden')) { paletteFiles = r.files; renderPalette(paletteInput.value); }
+  }
+}
+
+// Global shortcuts (capture phase so the terminal/editor don't eat them):
+// Cmd/Ctrl+P → command palette; Shift+Cmd/Ctrl+F → multi-file search.
+document.addEventListener('keydown', (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && !e.altKey && !e.shiftKey && (e.key === 'p' || e.key === 'P')) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (paletteEl && !paletteEl.classList.contains('hidden')) closePalette();
+    else openPalette();
+  } else if (mod && e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+    e.preventDefault();
+    e.stopPropagation();
+    openSearch();
+  }
+}, true);
+
 (async function boot() {
   // Platform class drives OS-specific chrome (e.g. macOS traffic-light padding).
   const plat = window.gits.platform;
@@ -2025,6 +3174,7 @@ document.getElementById('settings-close').addEventListener('click', () => settin
   await loadAccounts();
   await loadProjects({ fetch: false });
   await restoreSession(); // reopen the tabs from last time (opt-out in Settings)
+  startTeamBackground();  // if a team is configured, connect chat + show unread badge
   // Quietly check for a newer release shortly after launch (opt-out in Settings).
   if (settings.autoUpdate) setTimeout(() => checkForUpdates({ silent: true }), 4000);
 })();

@@ -959,6 +959,23 @@ ipcMain.handle('fs:delete', async (_e, p) => {
   }
 });
 
+// Read an image file as a data URL for the in-app preview (CSP allows data:).
+ipcMain.handle('fs:readImage', (_e, p) => {
+  try {
+    const abs = expandHome(p);
+    const ext = path.extname(abs).slice(1).toLowerCase();
+    const mime = {
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+      webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp', ico: 'image/x-icon', avif: 'image/avif',
+    }[ext] || 'application/octet-stream';
+    const st = fs.statSync(abs);
+    if (st.size > 25 * 1024 * 1024) return { ok: false, error: 'Image is too large to preview (over 25 MB).' };
+    return { ok: true, dataUrl: `data:${mime};base64,${fs.readFileSync(abs).toString('base64')}`, size: st.size };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Could not read the image.' };
+  }
+});
+
 // Save a pasted image (base64) into `dir`, return the new file's path.
 ipcMain.handle('fs:saveImage', (_e, { dir, base64, ext } = {}) => {
   try {
@@ -972,6 +989,78 @@ ipcMain.handle('fs:saveImage', (_e, { dir, base64, ext } = {}) => {
   } catch (e) {
     return { ok: false, error: e.message || 'Could not save the image.' };
   }
+});
+
+// A project's files (relative paths) for the command palette's fuzzy open.
+// Uses git for repos (fast, respects .gitignore); a bounded walk otherwise.
+ipcMain.handle('proj:files', async (_e, p) => {
+  const root = expandHome(p);
+  if (!root || !fs.existsSync(root)) return { ok: false, files: [] };
+  if (fs.existsSync(path.join(root, '.git'))) {
+    const r = await git(root, ['ls-files', '--cached', '--others', '--exclude-standard']);
+    if (!r.err) return { ok: true, files: r.stdout.split('\n').filter(Boolean).slice(0, 8000) };
+  }
+  const out = [];
+  (function walk(dir, depth) {
+    if (depth > 8 || out.length >= 8000) return;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (e.name.startsWith('.') || SCAN_SKIP.has(e.name)) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full, depth + 1);
+      else out.push(path.relative(root, full));
+    }
+  })(root, 0);
+  return { ok: true, files: out.slice(0, 8000) };
+});
+
+// Full-text search across a project. Uses `git grep` for repos (fast, respects
+// .gitignore, includes untracked); a bounded file walk otherwise.
+ipcMain.handle('proj:search', async (_e, { root, query, caseSensitive } = {}) => {
+  const r = expandHome(root);
+  const q = String(query || '');
+  const MAX = 500;
+  if (!q.trim() || !r || !fs.existsSync(r)) return { ok: true, results: [], truncated: false };
+
+  if (fs.existsSync(path.join(r, '.git'))) {
+    const args = ['grep', '-n', '-I', '--no-color', '--untracked'];
+    if (!caseSensitive) args.push('-i');
+    args.push('-F', '-e', q); // fixed-string match
+    const res = await git(r, args);
+    const lines = (res.stdout || '').split('\n').filter(Boolean).slice(0, MAX);
+    const results = lines.map((ln) => {
+      const m = ln.match(/^(.*?):(\d+):(.*)$/);
+      return m ? { file: m[1], line: parseInt(m[2], 10), text: m[3].slice(0, 300) } : null;
+    }).filter(Boolean);
+    return { ok: true, results, truncated: lines.length >= MAX };
+  }
+
+  const results = [];
+  const needle = caseSensitive ? q : q.toLowerCase();
+  (function walk(dir, depth) {
+    if (depth > 8 || results.length >= MAX) return;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (results.length >= MAX) return;
+      if (e.name.startsWith('.') || SCAN_SKIP.has(e.name)) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(full, depth + 1); continue; }
+      let buf;
+      try { buf = fs.readFileSync(full); } catch { continue; }
+      if (looksBinary(buf) || buf.length > 1024 * 1024) continue;
+      const txt = buf.toString('utf8');
+      if ((caseSensitive ? txt : txt.toLowerCase()).indexOf(needle) === -1) continue;
+      txt.split('\n').forEach((line, i) => {
+        if (results.length >= MAX) return;
+        if ((caseSensitive ? line : line.toLowerCase()).includes(needle)) {
+          results.push({ file: path.relative(r, full), line: i + 1, text: line.slice(0, 300) });
+        }
+      });
+    }
+  })(r, 0);
+  return { ok: true, results, truncated: results.length >= MAX };
 });
 
 // ===========================================================================
@@ -1037,25 +1126,264 @@ function summarizeChanges(nameStatus) {
   return `${verb} ${head} and ${files.length - 1} other file${files.length - 1 === 1 ? '' : 's'}`;
 }
 
-ipcMain.handle('ai:commitMessage', async (_e, p) => {
-  const repo = expandHome(p);
-  await git(repo, ['add', '-A']); // stage so new files are included in the diff/summary
-  const ns = await git(repo, ['diff', '--cached', '--name-status']);
-  const nameStatus = (ns.stdout || '').trim();
-  if (!nameStatus) return { ok: false, error: 'Nothing to commit.' };
+// Accepts a repo path (string) to summarize ALL pending changes, or
+// { repo, staged: true } to summarize only what's staged. Non-destructive — it
+// never stages anything itself (the review tab curates staging on its own).
+ipcMain.handle('ai:commitMessage', async (_e, arg) => {
+  const opts = typeof arg === 'string' ? { repo: arg } : (arg || {});
+  const repo = expandHome(opts.repo);
+  const staged = !!opts.staged;
+  const hasHead = !(await git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD'])).err;
+
+  let nameStatus, diffText;
+  if (staged) {
+    nameStatus = (await git(repo, ['diff', '--cached', '--name-status'])).stdout.trim();
+    diffText = (await git(repo, ['diff', '--cached', '--stat'])).stdout
+      + '\n\n' + (await git(repo, ['diff', '--cached'])).stdout.slice(0, 6000);
+  } else {
+    // All pending changes, without staging: tracked via diff, untracked listed.
+    const tracked = hasHead ? (await git(repo, ['diff', 'HEAD', '--name-status'])).stdout.trim() : '';
+    const untracked = (await git(repo, ['ls-files', '--others', '--exclude-standard'])).stdout.trim()
+      .split('\n').filter(Boolean).map((f) => 'A\t' + f).join('\n');
+    nameStatus = [tracked, untracked].filter(Boolean).join('\n');
+    diffText = (hasHead ? (await git(repo, ['diff', 'HEAD', '--stat'])).stdout
+      + '\n\n' + (await git(repo, ['diff', 'HEAD'])).stdout.slice(0, 6000) : '') + '\n' + untracked;
+  }
+  if (!nameStatus) return { ok: false, error: staged ? 'Nothing staged to describe.' : 'Nothing to commit.' };
   const fallback = summarizeChanges(nameStatus);
 
   const claude = await whichBin('claude');
   if (!claude) return { ok: true, message: fallback, source: 'summary' };
 
-  const diff = (await git(repo, ['diff', '--cached', '--stat'])).stdout
-    + '\n\n' + (await git(repo, ['diff', '--cached'])).stdout.slice(0, 6000);
   const prompt = 'Write a concise git commit message (one line, imperative mood, under 72 chars, '
-    + 'no quotes, no trailing period) for these staged changes:\n\n' + diff;
+    + 'no quotes, no trailing period) for these changes:\n\n' + diffText;
   const res = await run(claude, ['-p', prompt], { cwd: repo, timeout: 30000 });
   const out = (res.stdout || '').trim().split('\n').map((s) => s.trim()).filter(Boolean)[0];
   if (res.err || !out) return { ok: true, message: fallback, source: 'summary' };
   return { ok: true, message: out.replace(/^["'`]|["'`]$/g, '').slice(0, 120), source: 'ai' };
+});
+
+// ===========================================================================
+// Review & stage — per-file staging and a staged-only commit, for the review tab.
+// ===========================================================================
+
+// Per-file status with staged/unstaged flags, parsed from porcelain v1 (XY codes).
+ipcMain.handle('git:statusFiles', async (_e, p) => {
+  const repo = expandHome(p);
+  if (!fs.existsSync(path.join(repo, '.git'))) return { ok: false, error: 'Not a git repo.' };
+  const r = await git(repo, ['status', '--porcelain=v1']);
+  if (r.err) return { ok: false, error: r.stderr || 'git status failed.' };
+  const files = [];
+  for (const line of r.stdout.split('\n')) {
+    if (!line.trim()) continue;
+    const x = line[0], y = line[1];
+    let rel = line.slice(3);
+    if (rel.includes(' -> ')) rel = rel.split(' -> ')[1]; // rename → new path
+    rel = rel.replace(/^"|"$/g, '');
+    const untracked = x === '?' && y === '?';
+    const staged = !untracked && x !== ' ';
+    const unstaged = untracked || y !== ' ';
+    let type = 'modified';
+    if (untracked || x === 'A') type = 'new';
+    else if (x === 'D' || y === 'D') type = 'deleted';
+    else if (x === 'R') type = 'renamed';
+    files.push({ file: rel, x, y, staged, unstaged, type });
+  }
+  files.sort((a, b) => a.file.localeCompare(b.file));
+  return { ok: true, files };
+});
+
+ipcMain.handle('git:stage', async (_e, { repo, file } = {}) => {
+  const r = await git(expandHome(repo), ['add', '--', file]);
+  return r.err ? { ok: false, error: r.stderr || 'Could not stage.' } : { ok: true };
+});
+
+ipcMain.handle('git:unstage', async (_e, { repo, file } = {}) => {
+  const r = expandHome(repo);
+  const hasHead = !(await git(r, ['rev-parse', '--verify', '--quiet', 'HEAD'])).err;
+  const res = hasHead ? await git(r, ['reset', '-q', 'HEAD', '--', file])
+                      : await git(r, ['rm', '--cached', '-q', '--', file]);
+  return res.err ? { ok: false, error: res.stderr || 'Could not unstage.' } : { ok: true };
+});
+
+ipcMain.handle('git:stageAll', async (_e, p) => {
+  const r = await git(expandHome(p), ['add', '-A']);
+  return r.err ? { ok: false, error: r.stderr || 'Could not stage all.' } : { ok: true };
+});
+
+ipcMain.handle('git:unstageAll', async (_e, p) => {
+  const repo = expandHome(p);
+  const hasHead = !(await git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD'])).err;
+  const res = hasHead ? await git(repo, ['reset', '-q', 'HEAD', '--']) : await git(repo, ['rm', '-r', '--cached', '-q', '.']);
+  return res.err ? { ok: false, error: res.stderr || 'Could not unstage all.' } : { ok: true };
+});
+
+// Commit only what's staged (unlike git:sync, which stages everything first).
+ipcMain.handle('git:commitStaged', async (_e, { repo, message } = {}) => {
+  const r = expandHome(repo);
+  // `diff --cached --quiet` exits non-zero when there ARE staged changes.
+  const hasStaged = (await git(r, ['diff', '--cached', '--quiet'])).err;
+  if (!hasStaged) return { ok: false, error: 'Nothing staged to commit.' };
+  const c = await git(r, ['commit', '-m', message || 'Update via Gitsidian']);
+  if (c.err) return { ok: false, error: c.stderr || c.stdout || 'Commit failed.' };
+  return { ok: true };
+});
+
+// Push the current branch (sets upstream), with friendly rejection messages.
+ipcMain.handle('git:push', async (_e, p) => {
+  const push = await git(expandHome(p), ['push', '-u', 'origin', 'HEAD']);
+  if (push.err) {
+    const out = push.stderr || '';
+    if (/rejected|non-fast-forward|fetch first/i.test(out)) {
+      return { ok: false, error: 'Push rejected — the GitHub copy has newer commits. Pull those first, then push again.' };
+    }
+    if (/no upstream|no configured push|does not appear to be a git/i.test(out)) {
+      return { ok: false, error: 'No GitHub remote — publish this project first.' };
+    }
+    return { ok: false, error: out || 'Push failed.' };
+  }
+  return { ok: true };
+});
+
+// ===========================================================================
+// Commit history — a per-project log and the diff for a single commit.
+// ===========================================================================
+
+ipcMain.handle('git:log', async (_e, { repo, limit = 200 } = {}) => {
+  const r = expandHome(repo);
+  if (!fs.existsSync(path.join(r, '.git'))) return { ok: false, error: 'Not a git repo.' };
+  // \x1f (unit separator) between fields; one commit per line (subject is %s, single line).
+  const res = await git(r, ['log', `-n${limit}`, '--pretty=format:%H%x1f%h%x1f%an%x1f%ar%x1f%s']);
+  if (res.err) {
+    if (/does not have any commits|bad revision|unknown revision/i.test(res.stderr || '')) return { ok: true, commits: [] };
+    return { ok: false, error: res.stderr || 'git log failed.' };
+  }
+  const commits = res.stdout.split('\n').filter(Boolean).map((line) => {
+    const [hash, short, author, date, subject] = line.split('\x1f');
+    return { hash, short, author, date, subject };
+  });
+  return { ok: true, commits };
+});
+
+ipcMain.handle('git:commitDiff', async (_e, { repo, hash } = {}) => {
+  const res = await git(expandHome(repo), ['show', '--stat', '--patch', hash]);
+  if (res.err) return { ok: false, error: res.stderr || 'Could not load that commit.' };
+  return { ok: true, diff: res.stdout };
+});
+
+// ===========================================================================
+// Pull requests (via gh)
+// ===========================================================================
+const PR_URL_RE = /https:\/\/github\.com\/\S+\/pull\/\d+/;
+
+// Is there already an open PR for the current branch? (Returns {exists:false}
+// rather than an error when there isn't, so the UI can offer to create one.)
+ipcMain.handle('gh:prView', async (_e, p) => {
+  const res = await run('gh', ['pr', 'view', '--json', 'url,state,number,title'], { cwd: expandHome(p) });
+  if (res.err) return { ok: true, exists: false };
+  try { const j = JSON.parse(res.stdout); return { ok: true, exists: true, ...j }; }
+  catch { return { ok: true, exists: false }; }
+});
+
+// Push the current branch, then open a PR. If one already exists, gh prints its
+// URL — we surface that instead of erroring.
+ipcMain.handle('gh:prCreate', async (_e, { repo, title, body } = {}) => {
+  const r = expandHome(repo);
+  const ghv = await run('gh', ['--version']);
+  if (ghv.err) return { ok: false, error: 'GitHub CLI (gh) not found on PATH.' };
+  const push = await git(r, ['push', '-u', 'origin', 'HEAD']);
+  if (push.err && /no configured push|does not appear to be a git|no such remote/i.test(push.stderr || '')) {
+    return { ok: false, error: 'No GitHub remote — publish this project first.' };
+  }
+  const res = await run('gh', ['pr', 'create', '--title', title || 'Update', '--body', body || ''], { cwd: r });
+  const out = `${res.stdout || ''}\n${res.stderr || ''}`;
+  const m = out.match(PR_URL_RE);
+  if (res.err) {
+    if (m) return { ok: true, url: m[0], existed: true }; // already exists
+    const msg = (res.stderr || res.stdout || '').trim();
+    if (/no commits between/i.test(msg)) return { ok: false, error: 'No new commits on this branch vs the base — commit something first.' };
+    if (/not.*logged|auth/i.test(msg)) return { ok: false, error: 'Not signed in to GitHub — run: gh auth login' };
+    return { ok: false, error: msg || 'Could not create the pull request.' };
+  }
+  return { ok: true, url: m ? m[0] : out.trim() };
+});
+
+// Raw diff for one file — working-vs-index (staged:false) or index-vs-HEAD
+// (staged:true) — used by the review tab's per-hunk staging.
+ipcMain.handle('git:fileDiff', async (_e, { repo, file, staged } = {}) => {
+  const args = ['diff'];
+  if (staged) args.push('--cached');
+  args.push('--', file);
+  const r = await git(expandHome(repo), args);
+  return { ok: !r.err || !!r.stdout, diff: r.stdout || '' };
+});
+
+// Apply a single hunk to the index (stage), or reverse it out (unstage).
+ipcMain.handle('git:applyHunk', async (_e, { repo, patch, reverse } = {}) => {
+  const r = expandHome(repo);
+  const tmp = path.join(os.tmpdir(), `gits-hunk-${process.pid}-${Math.round(process.hrtime()[1])}.patch`);
+  try {
+    fs.writeFileSync(tmp, patch.endsWith('\n') ? patch : patch + '\n');
+    const args = ['apply', '--cached'];
+    if (reverse) args.push('--reverse');
+    args.push(tmp);
+    const res = await git(r, args);
+    try { fs.unlinkSync(tmp); } catch {}
+    if (res.err) return { ok: false, error: (res.stderr || 'Could not apply that hunk.').trim() };
+    return { ok: true };
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch {}
+    return { ok: false, error: e.message || 'Could not apply that hunk.' };
+  }
+});
+
+// Move a file/folder into another directory (drag-and-drop in the tree).
+ipcMain.handle('fs:move', (_e, { src, destDir } = {}) => {
+  try {
+    const s = expandHome(src), d = expandHome(destDir);
+    const target = path.join(d, path.basename(s));
+    if (target === s) return { ok: true, path: target };
+    if (path.relative(s, d) === '' || (d + path.sep).startsWith(s + path.sep)) {
+      return { ok: false, error: "Can't move a folder into itself." };
+    }
+    if (fs.existsSync(target)) return { ok: false, error: 'Something with that name already exists there.' };
+    fs.renameSync(s, target);
+    return { ok: true, path: target };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Could not move.' };
+  }
+});
+
+// Watch open editor files so the app can reload them when changed on disk
+// (e.g. an AI agent edited the file). Re-attaches across atomic-save renames.
+const fileWatchers = new Map(); // abs path -> { watcher, timer }
+function emitToAll(channel, payload) {
+  for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(channel, payload);
+}
+ipcMain.handle('watch:add', (_e, p) => {
+  const abs = expandHome(p);
+  if (fileWatchers.has(abs)) return true;
+  const entry = { watcher: null, timer: null };
+  const attach = () => {
+    try {
+      entry.watcher = fs.watch(abs, (eventType) => {
+        clearTimeout(entry.timer);
+        entry.timer = setTimeout(() => {
+          emitToAll('file:changed', { path: abs });
+          if (eventType === 'rename') { try { entry.watcher.close(); } catch {} if (fs.existsSync(abs)) attach(); }
+        }, 150);
+      });
+    } catch {}
+  };
+  attach();
+  fileWatchers.set(abs, entry);
+  return true;
+});
+ipcMain.handle('watch:remove', (_e, p) => {
+  const abs = expandHome(p);
+  const e = fileWatchers.get(abs);
+  if (e) { try { e.watcher && e.watcher.close(); } catch {} clearTimeout(e.timer); fileWatchers.delete(abs); }
+  return true;
 });
 
 // ===========================================================================
@@ -1072,6 +1400,108 @@ ipcMain.handle('session:save', (_e, data) => {
 ipcMain.handle('session:load', () => {
   try { return JSON.parse(fs.readFileSync(sessionFile(), 'utf8')); }
   catch { return { tabs: [] }; }
+});
+
+// ===========================================================================
+// Team — a private "hub" repo holds the chat (as comments on one GitHub issue).
+// Identity is the gh account; config persists in userData; messages cache locally.
+// No server: this is the free tier (real-time relay is a paid-tier upgrade).
+// ===========================================================================
+function teamFile() { return path.join(app.getPath('userData'), 'team.json'); }
+function readTeam() { try { return JSON.parse(fs.readFileSync(teamFile(), 'utf8')); } catch { return {}; } }
+function writeTeam(d) {
+  fs.mkdirSync(path.dirname(teamFile()), { recursive: true });
+  fs.writeFileSync(teamFile(), JSON.stringify(d, null, 2));
+  return d;
+}
+function chatCacheFile() { return path.join(app.getPath('userData'), 'team-chat.json'); }
+
+// Get or update the team config ({ repo, issue }).
+ipcMain.handle('team:config', (_e, patch) => {
+  let cfg = readTeam();
+  if (patch && typeof patch === 'object') cfg = writeTeam({ ...cfg, ...patch });
+  return cfg;
+});
+
+// The signed-in GitHub identity used as the chat username/profile.
+ipcMain.handle('team:whoami', async () => {
+  const r = await run('gh', ['api', 'user', '--jq', '{login: .login, name: .name, avatar: .avatar_url}']);
+  if (r.err) return { ok: false, error: 'Not signed in to GitHub — run: gh auth login' };
+  try { return { ok: true, ...JSON.parse(r.stdout) }; } catch { return { ok: false, error: 'Could not read your GitHub user.' }; }
+});
+
+// Create a new PRIVATE hub repo for the team (one-click setup); return owner/name.
+ipcMain.handle('team:createRepo', async (_e, name) => {
+  const safe = String(name || '').trim().replace(/[^a-zA-Z0-9._-]/g, '-');
+  if (!safe) return { ok: false, error: 'Enter a repo name.' };
+  const who = await run('gh', ['api', 'user', '--jq', '.login']);
+  if (who.err) return { ok: false, error: 'Not signed in to GitHub — run: gh auth login' };
+  const login = (who.stdout || '').trim();
+  const create = await run('gh', ['repo', 'create', safe, '--private', '--description', 'Gitsidian team hub']);
+  if (create.err && !/already exists/i.test(create.stderr || '')) {
+    return { ok: false, error: create.stderr || 'Could not create the repo.' };
+  }
+  return { ok: true, repo: `${login}/${safe}` };
+});
+
+const CHAT_TITLE = 'Gitsidian Team Chat';
+// Find the chat issue in the hub repo, creating it if needed.
+ipcMain.handle('team:chatInit', async (_e, repo) => {
+  if (!repo || !repo.includes('/')) return { ok: false, error: 'Enter the hub repo as owner/name.' };
+  const view = await run('gh', ['repo', 'view', repo, '--json', 'nameWithOwner,visibility']);
+  if (view.err) return { ok: false, error: `Can't access "${repo}". Create it (private) first, or check the name.` };
+  let visibility = null;
+  try { visibility = JSON.parse(view.stdout).visibility; } catch {} // PUBLIC | PRIVATE | INTERNAL
+  const list = await run('gh', ['issue', 'list', '--repo', repo, '--search', `${CHAT_TITLE} in:title`, '--state', 'all', '--json', 'number,title', '--limit', '20']);
+  if (!list.err) {
+    try { const hit = JSON.parse(list.stdout).find((i) => i.title === CHAT_TITLE); if (hit) return { ok: true, issue: hit.number, visibility }; } catch {}
+  }
+  const create = await run('gh', ['issue', 'create', '--repo', repo, '--title', CHAT_TITLE, '--body', 'Gitsidian team chat — messages appear as comments below.']);
+  if (create.err) return { ok: false, error: create.stderr || 'Could not create the chat thread.' };
+  const m = (create.stdout || '').match(/\/issues\/(\d+)/);
+  return m ? { ok: true, issue: parseInt(m[1], 10), visibility } : { ok: false, error: 'Created the thread but could not read its number.' };
+});
+
+// Read chat messages (issue comments), newest-last. Also refreshes the local cache.
+ipcMain.handle('team:chatList', async (_e, { repo, issue } = {}) => {
+  if (!repo || !issue) return { ok: false, error: 'Team chat is not set up.' };
+  const r = await run('gh', ['api', '--paginate', `repos/${repo}/issues/${issue}/comments`,
+    '--jq', '.[] | {id: .id, login: .user.login, avatar: .user.avatar_url, body: .body, at: .created_at}']);
+  if (r.err) return { ok: false, error: r.stderr || 'Could not load messages.' };
+  const messages = (r.stdout || '').split('\n').filter(Boolean)
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  try { fs.writeFileSync(chatCacheFile(), JSON.stringify({ repo, issue, messages, at: Date.now() })); } catch {}
+  return { ok: true, messages };
+});
+
+// Locally-cached messages — instant render offline / before the first fetch.
+ipcMain.handle('team:chatCache', (_e, { repo, issue } = {}) => {
+  try {
+    const c = JSON.parse(fs.readFileSync(chatCacheFile(), 'utf8'));
+    if (c.repo === repo && c.issue === issue) return { ok: true, messages: c.messages || [] };
+  } catch {}
+  return { ok: true, messages: [] };
+});
+
+// Invite a GitHub user to the hub repo (they can then read + chat). Adds them
+// as a collaborator with write access.
+ipcMain.handle('team:invite', async (_e, { repo, username, permission } = {}) => {
+  const u = String(username || '').trim().replace(/^@/, '');
+  if (!repo || !u) return { ok: false, error: 'Enter a GitHub username.' };
+  const r = await run('gh', ['api', '-X', 'PUT', `repos/${repo}/collaborators/${u}`, '-f', `permission=${permission || 'push'}`]);
+  if (r.err) {
+    const msg = (r.stderr || '').trim();
+    if (/Not Found/i.test(msg)) return { ok: false, error: `No GitHub user "${u}".` };
+    return { ok: false, error: msg || 'Could not send the invite.' };
+  }
+  return { ok: true, user: u };
+});
+
+ipcMain.handle('team:chatPost', async (_e, { repo, issue, body } = {}) => {
+  if (!body || !body.trim()) return { ok: false, error: 'Empty message.' };
+  const r = await run('gh', ['api', '-X', 'POST', `repos/${repo}/issues/${issue}/comments`, '-f', `body=${body}`]);
+  if (r.err) return { ok: false, error: r.stderr || 'Could not send your message.' };
+  return { ok: true };
 });
 
 // ===========================================================================
