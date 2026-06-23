@@ -2,6 +2,15 @@
 
 All notable changes to Gitsidian.
 
+## 0.4.8
+
+- **Mark as ignore** — right-click a file/folder in the tree → Add to .gitignore
+  (and Reveal in Finder).
+- **Pull preview** — see the incoming commits, files, and approximate download size
+  before pulling.
+- **Settings panel** — accent colour, terminal font size, scrollback, remembered
+  default AI, and bold/italic terminal text. Persisted across restarts.
+
 ## 0.4.7
 
 - **Keyboard shortcuts** — ⌘T new terminal, ⌘W close tab, ⌘1–9 switch tabs, ⌘K
