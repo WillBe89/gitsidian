@@ -105,6 +105,42 @@ document.addEventListener('click', hideContextMenu);
 window.addEventListener('blur', hideContextMenu);
 
 // ---------------------------------------------------------------------------
+// Settings (personalization) — persisted in localStorage, applied live
+// ---------------------------------------------------------------------------
+const ACCENTS = {
+  crimson: ['#c0264b', '#e23a63'],
+  blue: ['#2563eb', '#3b82f6'],
+  green: ['#15a34a', '#22c55e'],
+  purple: ['#7c3aed', '#a855f7'],
+  amber: ['#d97706', '#f59e0b'],
+  pink: ['#db2777', '#ec4899'],
+  teal: ['#0d9488', '#14b8a6'],
+};
+function loadSettings() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem('gits-settings') || '{}'); } catch {}
+  return {
+    accent: ACCENTS[s.accent] ? s.accent : 'crimson',
+    fontSize: typeof s.fontSize === 'number' ? s.fontSize : 12.5,
+    scrollback: typeof s.scrollback === 'number' ? s.scrollback : 5000,
+    defaultAi: s.defaultAi || null,
+  };
+}
+let settings = loadSettings();
+function saveSettings() { localStorage.setItem('gits-settings', JSON.stringify(settings)); }
+function applyAccent() {
+  const [a, b] = ACCENTS[settings.accent] || ACCENTS.crimson;
+  document.documentElement.style.setProperty('--accent', a);
+  document.documentElement.style.setProperty('--accent-2', b);
+}
+function applyFontSize() {
+  for (const s of sessions.values()) {
+    try { s.term.options.fontSize = settings.fontSize; s.fit.fit(); window.gits.ptyResize(s.id, s.term.cols, s.term.rows); } catch {}
+  }
+}
+applyAccent();
+
+// ---------------------------------------------------------------------------
 // AI picker
 // ---------------------------------------------------------------------------
 let lastAi = null;
@@ -120,6 +156,7 @@ async function loadAis(selectId) {
   aiSelect.appendChild(el('option', { value: '__add__' }, '+ Add a command…'));
 
   const prefer = (selectId && installed.find((a) => a.id === selectId))
+    || (settings.defaultAi && installed.find((a) => a.id === settings.defaultAi))
     || installed.find((a) => a.id !== 'shell' && !a.custom)
     || installed[0];
   if (prefer) aiSelect.value = prefer.id;
@@ -133,6 +170,8 @@ aiSelect.addEventListener('change', () => {
     openAddAi();
   } else {
     lastAi = aiSelect.value;
+    settings.defaultAi = aiSelect.value; // remember across launches
+    saveSettings();
   }
 });
 
@@ -718,10 +757,10 @@ async function openSession(cwd, label, aiOverride) {
   const term = new Terminal({
     theme: TERM_THEME,
     fontFamily: 'SF Mono, ui-monospace, Menlo, Monaco, monospace',
-    fontSize: 12.5,
+    fontSize: settings.fontSize,
     cursorBlink: true,
     allowProposedApi: true,
-    scrollback: 5000,
+    scrollback: settings.scrollback,
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
@@ -1411,6 +1450,39 @@ document.getElementById('addai-go').addEventListener('click', async () => {
     addaiStatus.className = 'import-status err';
   }
 });
+
+// ---------------------------------------------------------------------------
+// Settings modal
+// ---------------------------------------------------------------------------
+const settingsModal = document.getElementById('settings-modal');
+document.getElementById('open-settings').addEventListener('click', () => {
+  const wrap = document.getElementById('settings-accents');
+  wrap.innerHTML = '';
+  for (const [key, [a]] of Object.entries(ACCENTS)) {
+    const sw = el('div', { class: `swatch${key === settings.accent ? ' active' : ''}`, title: key });
+    sw.style.background = a;
+    sw.addEventListener('click', () => {
+      settings.accent = key; saveSettings(); applyAccent();
+      [...wrap.children].forEach((c) => c.classList.remove('active'));
+      sw.classList.add('active');
+    });
+    wrap.appendChild(sw);
+  }
+  const font = document.getElementById('settings-font');
+  const fontVal = document.getElementById('settings-font-val');
+  font.value = settings.fontSize;
+  fontVal.textContent = `${settings.fontSize}px`;
+  font.oninput = () => {
+    settings.fontSize = parseFloat(font.value);
+    fontVal.textContent = `${settings.fontSize}px`;
+    saveSettings(); applyFontSize();
+  };
+  const sb = document.getElementById('settings-scrollback');
+  sb.value = String(settings.scrollback);
+  sb.onchange = () => { settings.scrollback = parseInt(sb.value, 10); saveSettings(); }; // applies to new terminals
+  settingsModal.classList.remove('hidden');
+});
+document.getElementById('settings-close').addEventListener('click', () => settingsModal.classList.add('hidden'));
 
 // ---------------------------------------------------------------------------
 // Boot

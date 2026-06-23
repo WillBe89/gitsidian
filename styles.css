@@ -440,6 +440,14 @@ body.plat-mac .titlebar { padding-left: 80px; } /* clear the macOS traffic light
 .block-btn.danger:hover { background: #c41d35; border-color: #c41d35; }
 .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
 .modal-actions .block-btn { flex: 1; }
+/* Settings */
+.swatches { display: flex; gap: 10px; padding: 6px 0 10px; }
+.swatch { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+.swatch:hover { transform: scale(1.08); }
+.swatch.active { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--text); }
+#settings-font { width: 100%; accent-color: var(--accent); margin: 4px 0 8px; }
+#settings-scrollback { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-family: inherit; font-size: 13px; }
+
 .check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; padding: 4px 0; }
 .check-row input[type="checkbox"] { flex: 0 0 auto; width: 15px; height: 15px; margin: 0; }
 .radio-row { display: flex; gap: 18px; padding: 4px 0 2px; font-size: 13px; }
