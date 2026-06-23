@@ -40,7 +40,7 @@ newTermBtn.addEventListener('click', () => openSession(undefined, 'terminal', 's
 
 // Split view: show a second terminal alongside the active one.
 let splitId = null;
-const splitBtn = el('button', { class: 'new-tab split-toggle', title: 'Split view with another terminal', text: '⊟' });
+const splitBtn = el('button', { class: 'new-tab split-toggle', title: 'Split view with another tab (terminal, editor, AI, diff…)', text: '⊟' });
 splitBtn.addEventListener('click', () => toggleSplit());
 
 // Keep the persistent "+" and split controls at the end of the tab strip.
@@ -240,10 +240,8 @@ function applySidebarWidth() {
 }
 // Refit the visible terminal(s) — used after a resize drag.
 function refitTerminals() {
-  const a = sessions.get(activeId);
-  if (a && a.fit) fitAndResize(a);
-  const sec = splitId && sessions.get(splitId);
-  if (sec && sec.fit) fitAndResize(sec);
+  refreshPane(sessions.get(activeId));
+  if (splitId) refreshPane(sessions.get(splitId));
 }
 applyAccent();
 applyTheme();
@@ -1163,15 +1161,32 @@ function activate(id) {
 }
 
 // Toggle split with the most-recently-used other terminal.
-function toggleSplit() {
-  if (splitId) { splitId = null; applySplitClasses(); return; }
-  const other = [...sessions.keys()].filter((sid) => sid !== activeId && sessions.get(sid).kind === 'term').pop();
-  if (!other) { showToast('Open another terminal to split the view.'); return; }
-  splitId = other;
-  applySplitClasses();
+// Short kind label for the split picker (terminal/editor/diff/review/etc.).
+function paneKindLabel(s) {
+  if (s.kind === 'term') return 'terminal';
+  if (s.kind === 'editor') return 'editor';
+  return s.kind; // diff · review · history · search · chat · image
+}
+// Refit/refresh a pane after a layout change, by kind.
+function refreshPane(s) {
+  if (!s) return;
+  if (s.fit) fitAndResize(s);                                   // terminal (xterm)
+  else if (s.cm) requestAnimationFrame(() => { try { s.cm.refresh(); } catch {} }); // editor (CodeMirror)
 }
 
-// Apply/clear the side-by-side layout classes and refit both panes.
+// Split the active tab with ANY other open tab (terminal, editor, AI, diff, …).
+function toggleSplit() {
+  if (splitId) { splitId = null; applySplitClasses(); return; }
+  const others = [...sessions.values()].filter((s) => s.id !== activeId);
+  if (!others.length) { showToast('Open another tab to split the view.'); return; }
+  const r = splitBtn.getBoundingClientRect();
+  showContextMenu(Math.max(8, r.left - 120), r.bottom + 4, others.map((s) => ({
+    label: `${s.label}  ·  ${paneKindLabel(s)}`,
+    onClick: () => { splitId = s.id; applySplitClasses(); },
+  })));
+}
+
+// Apply/clear the side-by-side layout and refresh both panes (any kind).
 function applySplitClasses() {
   for (const s of sessions.values()) s.pane.classList.remove('split-2');
   const valid = splitId && sessions.has(splitId) && splitId !== activeId;
@@ -1181,11 +1196,10 @@ function applySplitClasses() {
     terminalsEl.style.setProperty('--split', settings.splitRatio + '%');
     const sec = sessions.get(splitId);
     sec.pane.classList.add('split-2');
-    if (sec.fit) fitAndResize(sec);
+    refreshPane(sec);
   }
   splitBtn.classList.toggle('on', !!splitId);
-  const a = sessions.get(activeId);
-  if (a && a.fit) fitAndResize(a);
+  refreshPane(sessions.get(activeId));
 }
 
 function fitAndResize(s) {
@@ -2882,6 +2896,12 @@ const updateStatus = document.getElementById('update-status');
 const updateGo = document.getElementById('update-go');
 const updateLater = document.getElementById('update-later');
 let updateCtx = null;
+let updatePhase = 'offer'; // 'offer' (download/install) → 'finish' (quit to apply)
+// Release-note links open in the browser, not navigate the app window.
+updateNotes.addEventListener('click', (e) => {
+  const a = e.target.closest('a');
+  if (a) { e.preventDefault(); const h = a.getAttribute('href'); if (/^https?:\/\//.test(h)) window.gits.openUrl(h); }
+});
 let updateChecking = false;
 
 // Always-visible version label in the sidebar footer. Click → check for updates.
@@ -2918,13 +2938,15 @@ async function checkForUpdates({ silent = false } = {}) {
     updateSub.textContent = res.asset
       ? `You have ${res.current}. Download and install ${res.latest}?`
       : `You have ${res.current}. Open the releases page to download ${res.latest}.`;
-    updateNotes.textContent = (res.notes || '').trim().slice(0, 1500);
+    updateNotes.innerHTML = renderMarkdown((res.notes || '').trim().slice(0, 4000));
     updateProgressWrap.classList.add('hidden');
     updateProgressBar.style.width = '0%';
     updateStatus.textContent = '';
     updateStatus.className = 'import-status';
+    updatePhase = 'offer';
     updateGo.textContent = res.asset ? 'Update now' : 'Open releases page';
     updateGo.disabled = false;
+    updateLater.textContent = 'Later';
     updateLater.disabled = false;
     settingsModal.classList.add('hidden'); // don't stack over the Settings dialog
     updateModal.classList.remove('hidden');
@@ -2935,6 +2957,7 @@ async function checkForUpdates({ silent = false } = {}) {
 
 updateLater.addEventListener('click', () => updateModal.classList.add('hidden'));
 updateGo.addEventListener('click', async () => {
+  if (updatePhase === 'finish') { window.gits.quitApp(); return; } // after install: quit to apply
   if (!updateCtx) return;
   // No installer for this platform → just open the releases page.
   if (!updateCtx.asset) {
@@ -2946,7 +2969,7 @@ updateGo.addEventListener('click', async () => {
   updateLater.disabled = true;
   updateStatus.textContent = 'Downloading…';
   updateStatus.className = 'import-status';
-  const dl = await window.gits.downloadUpdate(updateCtx.asset);
+  const dl = await window.gits.downloadUpdate(updateCtx.asset, updateCtx.latest);
   if (!dl.ok) {
     updateStatus.textContent = dl.error || 'Download failed.';
     updateStatus.className = 'import-status err';
@@ -2954,15 +2977,26 @@ updateGo.addEventListener('click', async () => {
     updateLater.disabled = false;
     return;
   }
-  updateStatus.textContent = 'Opening the installer — Gitsidian will close so you can finish updating.';
-  updateStatus.className = 'import-status ok';
   const ins = await window.gits.installUpdate(dl.path);
   if (!ins.ok) {
     updateStatus.textContent = ins.error || 'Could not open the installer.';
     updateStatus.className = 'import-status err';
     updateGo.disabled = false;
     updateLater.disabled = false;
+    return;
   }
+  // Manual install (unsigned build): guide the user through the drag + relaunch.
+  const isMac = window.gits.platform === 'darwin';
+  updateNotes.innerHTML = renderMarkdown(isMac
+    ? `**Installer opened** (and revealed in your Downloads):\n\n1. Drag **Gitsidian** onto the **Applications** folder and replace the old version.\n2. Quit Gitsidian (button below), then reopen it from Applications.\n\nThe downloaded file is in **Downloads** — Gitsidian removes the previous one automatically, and offers to delete this one after you update.`
+    : `**Installer opened** (and revealed in your Downloads). Run it to finish, then reopen Gitsidian. The previous download is removed automatically.`);
+  updateStatus.textContent = '';
+  updateSub.textContent = `Finishing update to ${updateCtx.latest}…`;
+  updateGo.textContent = 'Quit Gitsidian to finish';
+  updateGo.disabled = false;
+  updateLater.textContent = 'Close';
+  updateLater.disabled = false;
+  updatePhase = 'finish';
 });
 
 // ---------------------------------------------------------------------------
@@ -3175,6 +3209,22 @@ document.addEventListener('keydown', (e) => {
   await loadProjects({ fetch: false });
   await restoreSession(); // reopen the tabs from last time (opt-out in Settings)
   startTeamBackground();  // if a team is configured, connect chat + show unread badge
+  // If a previous update was applied, offer to delete the leftover installer.
+  try {
+    const rec = await window.gits.pendingUpdateCleanup();
+    if (rec && rec.path) {
+      const ver = await window.gits.appVersion();
+      // Only prompt once the update actually applied (running version matches).
+      if (rec.version && ver === rec.version) {
+        const name = rec.path.split('/').pop();
+        if (confirm(`You're now on ${ver}. Delete the downloaded installer "${name}" to free space?`)) {
+          await window.gits.deleteUpdateFile(rec.path);
+        } else {
+          await window.gits.deleteUpdateFile(null); // forget it so we don't ask again
+        }
+      }
+    }
+  } catch {}
   // Quietly check for a newer release shortly after launch (opt-out in Settings).
   if (settings.autoUpdate) setTimeout(() => checkForUpdates({ silent: true }), 4000);
 })();

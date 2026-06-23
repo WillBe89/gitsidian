@@ -2,6 +2,20 @@
 
 All notable changes to Gitsidian.
 
+## 0.6.1
+
+- **Split any two tabs** — the split (`⊟`) button now opens a picker so you can
+  put *any* two open tabs side by side (terminal, editor, AI, diff, chat…), not
+  just two terminals.
+- **Fix:** the auto-update dialog now renders release notes as formatted markdown
+  (headings, bold, lists, links) instead of raw text.
+- **Better update install flow** — the installer now downloads to **Downloads**
+  (and is revealed in Finder, so it's easy to find), shows clear step-by-step
+  instructions with a "Quit to finish" button (no more abrupt auto-close), removes
+  the **previous** download automatically (no version bloat), and offers to delete
+  the leftover installer next launch once the update has applied.
+  *(All the above take effect once you're on a build that includes them — 0.6.1+.)*
+
 ## 0.6.0
 
 A "VSCode-lite" pass **plus team collaboration** — a real code editor, the full

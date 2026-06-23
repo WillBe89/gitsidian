@@ -85,9 +85,12 @@ contextBridge.exposeInMainWorld('gits', {
   // Auto-update
   appVersion: () => ipcRenderer.invoke('app:version'),
   checkUpdate: () => ipcRenderer.invoke('update:check'),
-  downloadUpdate: (asset) => ipcRenderer.invoke('update:download', asset),
+  downloadUpdate: (asset, version) => ipcRenderer.invoke('update:download', asset, version),
   installUpdate: (filePath) => ipcRenderer.invoke('update:install', filePath),
   onUpdateProgress: (cb) => ipcRenderer.on('update:progress', (_e, payload) => cb(payload)),
+  quitApp: () => ipcRenderer.invoke('app:quit'),
+  pendingUpdateCleanup: () => ipcRenderer.invoke('update:pendingCleanup'),
+  deleteUpdateFile: (p) => ipcRenderer.invoke('update:deleteFile', p),
 
   // GitHub accounts
   ghAccounts: () => ipcRenderer.invoke('gh:accounts'),

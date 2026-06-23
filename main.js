@@ -1616,18 +1616,30 @@ ipcMain.handle('update:check', async () => {
   catch (e) { return { ok: false, error: e.message || 'Update check failed.' }; }
 });
 
-ipcMain.handle('update:download', async (e, asset) => {
+// Remember the last installer we downloaded, so we can prune it (no disk bloat)
+// and offer to delete it once the update has been applied.
+function updateRecordFile() { return path.join(app.getPath('userData'), 'update-download.json'); }
+function readUpdateRecord() { try { return JSON.parse(fs.readFileSync(updateRecordFile(), 'utf8')); } catch { return null; } }
+function writeUpdateRecord(rec) {
+  try { fs.mkdirSync(path.dirname(updateRecordFile()), { recursive: true }); fs.writeFileSync(updateRecordFile(), JSON.stringify(rec || {}, null, 2)); } catch {}
+}
+
+ipcMain.handle('update:download', async (e, asset, version) => {
   if (!asset || !asset.url) return { ok: false, error: 'No installer is published for this platform.' };
   const win = BrowserWindow.fromWebContents(e.sender);
-  // Sanitize the asset name to a bare filename before joining into temp.
-  const dest = path.join(app.getPath('temp'), path.basename(asset.name || 'gitsidian-update'));
+  // Download into Downloads (where users expect installers + can find them).
+  const dir = app.getPath('downloads');
+  const dest = path.join(dir, path.basename(asset.name || 'gitsidian-update'));
+  // Prune the previously-downloaded installer so old versions don't pile up.
+  const prev = readUpdateRecord();
+  if (prev && prev.path && prev.path !== dest) { try { fs.unlinkSync(prev.path); } catch {} }
   let lastSent = 0;
   try {
     await downloadToFile(asset.url, dest, (frac) => {
-      // Throttle progress events a little to avoid flooding the renderer.
       const pct = Math.round(frac * 100);
       if (pct !== lastSent) { lastSent = pct; emit(win, 'update:progress', { frac }); }
     });
+    writeUpdateRecord({ path: dest, version: version || null });
     return { ok: true, path: dest };
   } catch (err) {
     try { fs.unlinkSync(dest); } catch {}
@@ -1637,12 +1649,27 @@ ipcMain.handle('update:download', async (e, asset) => {
 
 ipcMain.handle('update:install', async (_e, filePath) => {
   if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: 'Installer not found — try downloading again.' };
-  // Open the installer: macOS mounts the .dmg in Finder; Windows runs the NSIS
-  // setup. Then quit so the user can replace the running copy.
-  const errMsg = await shell.openPath(filePath); // returns '' on success, else an error string
+  // Reveal it in Finder/Explorer (so it's easy to find) and open it: macOS mounts
+  // the .dmg; Windows runs the NSIS setup. We do NOT auto-quit — the renderer
+  // shows clear steps and a "Quit to finish" button instead.
+  try { shell.showItemInFolder(filePath); } catch {}
+  const errMsg = await shell.openPath(filePath); // '' on success, else an error string
   if (errMsg) return { ok: false, error: errMsg };
-  setTimeout(() => app.quit(), 1000);
   return { ok: true };
+});
+
+ipcMain.handle('app:quit', () => { app.quit(); return true; });
+
+// Is there a leftover downloaded installer we could clean up?
+ipcMain.handle('update:pendingCleanup', () => {
+  const rec = readUpdateRecord();
+  if (rec && rec.path && fs.existsSync(rec.path)) return { path: rec.path, version: rec.version || null };
+  return null;
+});
+ipcMain.handle('update:deleteFile', (_e, p) => {
+  try { if (p) fs.unlinkSync(p); } catch {}
+  writeUpdateRecord(null);
+  return true;
 });
 
 // ===========================================================================

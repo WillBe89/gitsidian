@@ -4,9 +4,9 @@
 
 # Gitsidian
 
-**A friendly, multi-tab cockpit for running AI coding assistants inside your projects — no terminal required.**
+### Your AI coding cockpit — edit code, run any AI, handle git, and chat with your team, all in one window.
 
-Open any git repo or Obsidian vault, browse and **edit** its files (with syntax highlighting), and run Claude Code, Codex, Ollama, or a plain shell — several at once, each in its own tab with a live status light. Publish, push, and pull to GitHub from the sidebar with guard-rails, review and stage changes, and **chat with your team** — all without leaving the app.
+**No terminal required.** Open any git repo or Obsidian vault; edit files with real syntax highlighting; run Claude Code, Codex, Ollama, or a shell — several at once, each a live tab. Then review, stage, commit, push, open PRs, and message your team — without leaving the app or memorising a single command.
 
 [![Download for macOS](https://img.shields.io/badge/Download-macOS-black?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
 [![Download for Windows](https://img.shields.io/badge/Download-Windows-0078D6?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
@@ -17,6 +17,16 @@ Open any git repo or Obsidian vault, browse and **edit** its files (with syntax 
 </div>
 
 ---
+
+## Highlights
+
+- **Edit code in-app** — a CodeMirror editor with syntax highlighting (~16 languages), find/replace, go-to-line, and Markdown/image preview. A "VSCode-lite" for the quick AI jobs.
+- **Run any AI CLI** — Claude Code, Codex, Gemini, Ollama, Aider and more — auto-detected, several at once, each a real terminal in its own tab with a live status light.
+- **Git without the terminal** — publish, commit, push, pull, **review & stage** (per-file *or* per-hunk), commit history, branch switching, and **open a PR** — all from the sidebar, with safety guard-rails.
+- **Work as a team** — built-in **chat** that uses your GitHub account as your identity (no extra accounts or servers), plus opt-in **AI command dispatch**: propose a prompt a teammate approves and runs in their own session.
+- **Make it yours** — dark/light themes, a resizable **split view of any two tabs**, command palette (⌘P), multi-file search, drag-and-drop, paste-an-image, and built-in auto-update.
+
+> **New in 0.6:** a real code editor, review-and-stage with per-hunk commits, team chat, and AI command dispatch.
 
 ## Why Gitsidian exists
 
