@@ -153,10 +153,11 @@ Or just push a `v*` tag — CI builds **macOS, Windows, and Linux** and attaches
 
 ## Roadmap
 
-See **[ROADMAP.md](ROADMAP.md)** for what's planned — highlights: per-file staging,
-a conflict helper for pulls, syntax highlighting in the editor, multi-file search,
-and full code signing/notarization (the build is wired for it; it needs a paid
-Developer ID).
+See **[ROADMAP.md](ROADMAP.md)** for what's planned. Next up (0.6.0) is making the
+git + editing loop complete: a review-and-stage changes view, commit history, open
+a PR from a branch, editor find/replace + syntax highlighting, Markdown/image
+preview, and a command palette. Further out: full code signing/notarization (the
+build is wired for it; it needs a paid Developer ID).
 
 ## Support
 
