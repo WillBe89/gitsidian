@@ -4,53 +4,59 @@ Ideas for future releases — roughly in priority order, not firm commitments.
 Suggestions and contributions welcome; sponsorship helps fund the signing/notarization
 that removes the OS security prompts (see the README's **Support** section).
 
-## Team & collaboration
+## 0.7 — the next big themes
 
-0.6.0 introduced GitHub-backed team chat + command dispatch. Next for teams:
+### Total file management in the sidebar
+Turn the file tree into a proper file manager — manage projects without the Finder
+or a terminal. *(Today: create / rename / delete-to-Trash / drag-to-move already work.)*
 
-- **Real-time chat** — instant delivery, typing indicators, and presence
-  (who's online / which repo they're in), instead of the current ~polling.
-- **Shared / pair sessions** — watch a teammate's AI session live (view-only
-  first; an edit/drive mode is a much bigger, carefully-guarded step).
-- **Reactions, threads, and multiple channels** in chat, plus cross-channel
-  unread counts.
-- **Shareable team workspace** — one click to load the whole cockpit (the same
-  repos, groups, and default AI) a teammate uses.
+- **New folder / new file** from a right-click anywhere in the tree.
+- **Copy, Cut, Paste, Duplicate, and "Move to…"** via right-click — not just drag.
+- **Multi-select** files/folders for bulk move, copy, or delete.
+- Drag files **between projects**, and into folders, with clear drop targets.
 
-## Editing & files
+### Advanced team chat
+Make chat feel like a real chat app, not just issue comments.
 
-- **More languages & a code outline** in the editor; format-on-save hooks.
-- **Copy** (not just move) in the tree, and duplicate-file.
+- **Display name / alias** — choose the name you appear as in Gitsidian while your
+  **GitHub account stays the underlying auth**. An alias per GitHub login (or a
+  fresh alias per account), shared via the team's hub repo so everyone sees the
+  same names.
+- **Custom avatar** — override the GitHub avatar with your own image.
+- **Rich compose toolbar** — Slack-style formatting buttons (bold, italic, code,
+  lists, links) on top of the markdown chat already renders.
+- **Reactions, threads, and per-channel unread counts.**
+- *(Real-time delivery + presence need a relay server — see 1.0.)*
 
-## Git & GitHub
+## 1.0 — when it's signed
 
-- **Conflict helper** for non-fast-forward pulls (clear choices instead of a
-  scary error).
-- **Stash management** — stash/pop from the UI.
-- **Remember the AI per project**, and per-project environment variables for the
-  CLIs (API keys, model overrides).
-
-## Sessions & UI
-
-- **Drag tabs to reorder**; save a set of tabs as a named **workspace**.
-- **Split into more than two panes**, and split an editor beside a terminal.
-- **Terminal search (⌘F)** within scrollback.
-- **Follow the system appearance** (auto Dark/Light), plus more theme presets and
-  a custom-accent picker.
-
-## Distribution
-
-- **Code signing & notarization** (macOS + Windows) to remove the security
-  warnings — the build is already wired for it (`build/notarize.js`,
+- **Code signing & notarization** (macOS + Windows) — removes the first-launch
+  security prompt entirely. The build is already wired (`build/notarize.js`,
   hardened-runtime entitlements); it needs a paid Apple Developer ID + a Windows
-  certificate. *This is the single biggest UX win and what donations fund.*
-- **Full in-place auto-update** — once builds are signed, upgrade silently with
-  Squirrel/electron-updater instead of handing off to the installer.
-- **Auto-update the Homebrew cask** from CI on each release (today it's a manual
-  shasum bump).
-- **More Linux formats** — `.rpm` and a system tray icon.
+  certificate. **The single biggest UX win — and what sponsorship funds.**
+- **Full in-place auto-update** — once signed, upgrade silently (Squirrel /
+  electron-updater) instead of the guided manual install.
+- **Real-time chat, presence & shared/pair sessions** — the flagship team
+  features, which need a relay; natural to build once the base is signed + stable.
+
+## Smaller / ongoing
+
+- **Editor:** more languages, a code outline, format-on-save.
+- **Git:** conflict helper for non-fast-forward pulls, stash management,
+  remember-the-AI per project + per-project environment variables.
+- **Sessions/UI:** drag tabs to reorder, saved "workspaces", split into >2 panes,
+  terminal search (⌘F), follow-system Dark/Light + more theme presets.
+- **Distribution:** auto-update the Homebrew cask from CI, more Linux formats
+  (`.rpm`, system tray icon).
 
 ## Shipped recently
+
+**0.6.2:** split-picker fix + shift/right-click to split any two tabs · resizable
+message box · SVG lightning-bolt dispatch icon · markdown release notes + improved
+update install flow (downloads to ~/Downloads, prunes old, offers cleanup).
+
+**0.6.1:** split any two tabs (terminal/editor/AI/diff) · update dialog renders
+markdown notes · README "Highlights" refresh.
 
 **0.6.0:** CodeMirror code editor (syntax highlighting, find/replace, go-to-line) ·
 review & stage changes with per-hunk staging · commit history · open/show a pull
