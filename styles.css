@@ -413,8 +413,13 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   flex: 0 0 auto;
   border-top: 1px solid var(--line);
   background: var(--panel);
-  padding: 8px 10px 10px;
+  padding: 0 10px 10px;
 }
+/* Drag-to-resize grip above a message box (terminal + chat composers). */
+.composer-resize { flex: 0 0 auto; height: 9px; cursor: row-resize; display: flex; align-items: center; justify-content: center; }
+.composer-resize::before { content: ''; width: 30px; height: 2px; border-radius: 2px; background: var(--line); transition: background 0.12s, width 0.12s; }
+.composer-resize:hover::before, body.row-resizing .composer-resize::before { background: var(--accent); width: 46px; }
+body.row-resizing, body.row-resizing * { cursor: row-resize !important; user-select: none; }
 .quick-row { display: flex; gap: 6px; margin-bottom: 7px; }
 .quick-btn {
   font-family: inherit; font-size: 11px; font-weight: 600;
@@ -716,7 +721,10 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .cmd-actions { display: flex; gap: 8px; }
 .cmd-actions .block-btn { flex: 1; padding: 6px; }
 .cmd-card.done .cmd-actions .block-btn.primary { background: var(--ok); border-color: var(--ok); }
-.cmd-propose { flex: 0 0 auto; align-self: flex-end; font-size: 14px; }
+.cmd-propose { flex: 0 0 auto; align-self: stretch; display: flex; align-items: center; justify-content: center; padding: 0 10px; }
+.cmd-propose svg { display: block; width: 18px; height: 18px; color: var(--accent-2); }
+.cmd-propose:hover svg { color: var(--accent); }
+.cmd-zap svg { width: 15px; height: 15px; vertical-align: -3px; }
 .chat-foot { flex: 0 0 auto; display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel); }
 .chat-input { flex: 1; resize: none; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-family: inherit; font-size: 13px; line-height: 1.4; max-height: 120px; }
 .tab-ai.chat { background: var(--panel-3); color: var(--muted); }

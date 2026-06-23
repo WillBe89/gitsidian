@@ -2,6 +2,17 @@
 
 All notable changes to Gitsidian.
 
+## 0.6.2
+
+- **Fix:** the split (`⊟`) picker opened and closed instantly (a click-bubbling
+  bug) and looked broken — it now stays open.
+- **Three ways to split now** — click `⊟` and pick a tab, **Shift-click** another
+  tab, or **right-click** a tab → "Split: show beside the current tab".
+- **Resizable message box** — drag the grip above any composer (terminal or chat)
+  to make it taller, so long messages are easy to see. Persists.
+- The AI command-dispatch icon is now a crisp **SVG lightning bolt** (bigger and
+  cleaner) instead of an emoji.
+
 ## 0.6.1
 
 - **Split any two tabs** — the split (`⊟`) button now opens a picker so you can

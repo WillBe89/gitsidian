@@ -41,7 +41,7 @@ newTermBtn.addEventListener('click', () => openSession(undefined, 'terminal', 's
 // Split view: show a second terminal alongside the active one.
 let splitId = null;
 const splitBtn = el('button', { class: 'new-tab split-toggle', title: 'Split view with another tab (terminal, editor, AI, diff…)', text: '⊟' });
-splitBtn.addEventListener('click', () => toggleSplit());
+splitBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleSplit(); });
 
 // Keep the persistent "+" and split controls at the end of the tab strip.
 function appendTabControls() {
@@ -195,6 +195,7 @@ function loadSettings() {
     autoUpdate: s.autoUpdate !== false, // opt-out; checks on launch by default
     restoreTabs: s.restoreTabs !== false, // opt-out; reopen tabs on relaunch
     allowChatCommands: !!s.allowChatCommands, // opt-IN; off by default (safety)
+    composerHeight: typeof s.composerHeight === 'number' ? Math.max(40, Math.min(480, s.composerHeight)) : 0, // 0 = auto
     theme: s.theme === 'light' ? 'light' : 'dark',
     sidebarWidth: typeof s.sidebarWidth === 'number' ? Math.max(200, Math.min(520, s.sidebarWidth)) : 280,
     splitRatio: typeof s.splitRatio === 'number' ? Math.max(20, Math.min(80, s.splitRatio)) : 50,
@@ -883,6 +884,34 @@ async function loadProjects({ fetch = false } = {}) {
 // ---------------------------------------------------------------------------
 // Sessions / tabs / terminals
 // ---------------------------------------------------------------------------
+
+// Size a message textarea: auto-grows with content; if the user has dragged the
+// resize handle (settings.composerHeight), that becomes the minimum height so
+// long inputs stay visible. Caps at ~half the window, then scrolls.
+function composerGrow(ta) {
+  ta.style.height = 'auto';
+  const hardMax = Math.min(480, Math.round(window.innerHeight * 0.5));
+  const fixed = settings.composerHeight || 0;
+  const h = fixed ? Math.max(fixed, Math.min(ta.scrollHeight, hardMax)) : Math.min(ta.scrollHeight, 120);
+  ta.style.height = h + 'px';
+}
+// A drag-to-resize grip for a message box (shared by terminal + chat composers).
+function makeComposerResizer(ta, grow) {
+  const handle = el('div', { class: 'composer-resize', title: 'Drag to resize the message box' });
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = settings.composerHeight || ta.offsetHeight || 40;
+    document.body.classList.add('row-resizing');
+    const hardMax = Math.min(480, Math.round(window.innerHeight * 0.5));
+    const move = (ev) => { settings.composerHeight = Math.max(40, Math.min(hardMax, startH + (startY - ev.clientY))); grow(); };
+    const up = () => { document.body.classList.remove('row-resizing'); document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); saveSettings(); };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+  return handle;
+}
+
 // A friendly input bar for a session: a normal multi-line text box (full
 // modern editing, scoped Cmd+A) plus quick-command buttons. Enter sends the
 // text to the PTY; Shift+Enter inserts a newline. The xterm above stays fully
@@ -905,10 +934,7 @@ function buildComposer(id, term) {
   let histIdx = 0;   // index into history; === length means "new line"
   let draft = '';    // stashes the in-progress line while browsing history
 
-  const autoGrow = () => {
-    textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
-  };
+  const autoGrow = () => composerGrow(textarea);
 
   const caretToEnd = () => {
     const n = textarea.value.length;
@@ -1036,7 +1062,7 @@ function buildComposer(id, term) {
   quick.appendChild(clearBtn);
 
   const inputRow = el('div', { class: 'composer-input' }, textarea, sendBtn);
-  const root = el('div', { class: 'composer' }, quick, inputRow);
+  const root = el('div', { class: 'composer' }, makeComposerResizer(textarea, autoGrow), quick, inputRow);
   return { el: root, textarea, insert };
 }
 
@@ -1125,10 +1151,26 @@ function attachTab(session, { tag, tagClass = 'tab-ai', tabTitle = '' } = {}) {
   );
   tab.addEventListener('click', (e) => {
     if (e.target.classList.contains('tab-close')) { closeSession(session.id); return; }
+    // Shift+click a different tab → show it beside the active one (split view).
+    if (e.shiftKey && activeId && activeId !== session.id) { splitWith(session.id); return; }
     activate(session.id);
   });
+  // Right-click a tab → split options.
+  tab.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const items = [];
+    if (splitId && (session.id === splitId || session.id === activeId)) {
+      items.push({ label: 'Close split view', onClick: () => { splitId = null; applySplitClasses(); } });
+    }
+    if (activeId && activeId !== session.id) {
+      items.push({ label: `Split: show beside "${(sessions.get(activeId) || {}).label || 'current tab'}"`, onClick: () => splitWith(session.id) });
+    }
+    if (!items.length) items.push({ label: 'Open another tab to split with', onClick: () => {} });
+    showContextMenu(e.clientX, e.clientY, items);
+  });
   const titleEl = tab.querySelector('.tab-title');
-  titleEl.title = 'Double-click to rename';
+  titleEl.title = 'Double-click to rename · Shift-click another tab to split';
   titleEl.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename(titleEl, session); });
   session.tabEl = tab;
   tabbar.appendChild(tab);
@@ -1172,6 +1214,13 @@ function refreshPane(s) {
   if (!s) return;
   if (s.fit) fitAndResize(s);                                   // terminal (xterm)
   else if (s.cm) requestAnimationFrame(() => { try { s.cm.refresh(); } catch {} }); // editor (CodeMirror)
+}
+
+// Put `id` beside the active tab (active on the left, `id` on the right).
+function splitWith(id) {
+  if (!id || id === activeId || !sessions.has(id)) return;
+  splitId = id;
+  applySplitClasses();
 }
 
 // Split the active tab with ANY other open tab (terminal, editor, AI, diff, …).
@@ -1900,7 +1949,7 @@ function chatCommandCard(m, me, cmd) {
   const risk = riskyReason(cmd.prompt);
   const card = el('div', { class: `cmd-card${risk ? ' risky' : ''}` });
   card.appendChild(el('div', { class: 'cmd-head' },
-    el('span', { class: 'cmd-zap', text: '⚡' }),
+    el('span', { class: 'cmd-zap', html: ZAP_SVG }),
     el('span', { class: 'cmd-who', text: mine ? 'You proposed a command' : `${m.login} proposes a command` }),
     el('span', { class: 'chat-time', text: relTime(m.at) })));
   card.appendChild(el('div', { class: 'cmd-target', text: `Run in ${cmd.repo} · ${cmd.ai}` }));
@@ -1918,6 +1967,9 @@ function chatCommandCard(m, me, cmd) {
   card.appendChild(el('div', { class: 'cmd-actions' }, dismiss, approve));
   return el('div', { class: `chat-msg${mine ? ' me' : ''}` }, el('div', { class: 'chat-bubble cmd-bubble' }, card));
 }
+
+// Clean filled lightning bolt (Feather "zap" shape) — used for AI command dispatch.
+const ZAP_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
 
 function chatMsgEl(m, me) {
   const cmd = parseCommand(m.body);
@@ -2145,7 +2197,7 @@ function renderChatMain() {
   });
   const input = el('textarea', { class: 'chat-input', rows: '1', placeholder: 'Message · Enter sends · Shift+Enter newline · @mention, **markdown** ok', spellcheck: 'false', autocapitalize: 'off' });
   const sendBtn = el('button', { class: 'send-btn', text: 'Send ▸' });
-  const autoGrow = () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 120) + 'px'; };
+  const autoGrow = () => composerGrow(input);
   const send = async () => {
     const body = input.value.trim(); if (!body) return;
     input.value = ''; autoGrow();
@@ -2159,9 +2211,9 @@ function renderChatMain() {
   input.addEventListener('input', autoGrow);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
   sendBtn.addEventListener('click', send);
-  const proposeBtn = el('button', { class: 'tiny-btn cmd-propose', title: 'Propose an AI command for a teammate to approve & run', text: '⚡' });
+  const proposeBtn = el('button', { class: 'tiny-btn cmd-propose', title: 'Propose an AI command for a teammate to approve & run', html: ZAP_SVG });
   proposeBtn.addEventListener('click', () => openProposeModal(ch));
-  teamMainEl.append(list, el('div', { class: 'chat-foot' }, proposeBtn, input, sendBtn));
+  teamMainEl.append(list, makeComposerResizer(input, autoGrow), el('div', { class: 'chat-foot' }, proposeBtn, input, sendBtn));
 
   for (const m of teamMsgs) list.appendChild(chatMsgEl(m, teamMe));
   list.scrollTop = list.scrollHeight;
