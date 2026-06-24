@@ -3087,26 +3087,62 @@ async function openTeamChat() {
 // Session persistence — remember terminal + editor tabs across relaunches.
 // ---------------------------------------------------------------------------
 let persistTimer = null;
-function persistSession() {
-  if (!settings.restoreTabs) return;
-  clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    const tabs = [];
-    for (const s of sessions.values()) {
-      if (s.kind === 'term') tabs.push({ kind: 'term', cwd: s.cwd, ai: s.ai, label: s.label });
-      else if (s.kind === 'editor') tabs.push({ kind: 'editor', filePath: s.filePath });
+let restoringSession = false;
+// Saved-session payload: open tabs + group definitions (members referenced by
+// their index in `tabs`, so they remap to the right sessions on restore).
+function sessionPayload() {
+  const tabs = [];
+  const idxOf = new Map();
+  for (const s of sessions.values()) {
+    if (s.kind === 'term') { idxOf.set(s.id, tabs.length); tabs.push({ kind: 'term', cwd: s.cwd, ai: s.ai, label: s.label }); }
+    else if (s.kind === 'editor') { idxOf.set(s.id, tabs.length); tabs.push({ kind: 'editor', filePath: s.filePath }); }
+  }
+  const savedGroups = [];
+  let activeGroupIdx = -1;
+  for (const g of groups) {
+    const members = g.members.map((id) => idxOf.get(id)).filter((i) => i !== undefined);
+    if (members.length >= 2) { // only groups whose members survive a restore
+      if (g.id === activeGroupId) activeGroupIdx = savedGroups.length;
+      savedGroups.push({ name: g.name, cols: g.cols, rows: g.rows, expanded: g.expanded, members });
     }
-    window.gits.saveSession({ tabs });
-  }, 400);
+  }
+  return { tabs, groups: savedGroups, activeGroupIdx };
+}
+function persistSession() {
+  if (!settings.restoreTabs || restoringSession) return;
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => window.gits.saveSession(sessionPayload()), 400);
 }
 
 async function restoreSession() {
   if (!settings.restoreTabs) return;
   const data = await window.gits.loadSession();
   const tabs = (data && Array.isArray(data.tabs)) ? data.tabs : [];
+  restoringSession = true; // don't let the per-tab saves clobber the saved groups mid-restore
+  const restoredIds = [];
   for (const t of tabs) {
-    if (t.kind === 'term') await openSession(t.cwd, t.label || 'terminal', t.ai);
-    else if (t.kind === 'editor') await openEditor(t.filePath);
+    let id = null;
+    try {
+      if (t.kind === 'term') id = await openSession(t.cwd, t.label || 'terminal', t.ai);
+      else if (t.kind === 'editor') id = await openEditor(t.filePath);
+    } catch {}
+    restoredIds.push(id);
+  }
+  // Rebuild the groups from saved tab indices.
+  let activeRebuiltId = null;
+  const savedGroups = (data && Array.isArray(data.groups)) ? data.groups : [];
+  savedGroups.forEach((sg, si) => {
+    const members = (sg.members || []).map((i) => restoredIds[i]).filter((id) => id && sessions.has(id));
+    if (members.length < 2) return;
+    const ng = { id: `tg${++paneGroupSeq}`, name: sg.name || `Group ${groups.length + 1}`, members: members.slice(0, MAX_GROUP), cols: sg.cols ?? 50, rows: sg.rows ?? 50, expanded: !!sg.expanded };
+    groups.push(ng);
+    if (si === data.activeGroupIdx) activeRebuiltId = ng.id;
+  });
+  restoringSession = false;
+  if (groups.length) {
+    renderGroupChips();
+    if (activeRebuiltId) activateGroup(activeRebuiltId); else applyLayout();
+    persistSession(); // re-save now that the groups are back
   }
 }
 
@@ -4317,10 +4353,5 @@ document.addEventListener('keydown', (e) => {
 // debounced saves that run on every open/close).
 window.addEventListener('beforeunload', () => {
   if (!settings.restoreTabs) return;
-  const tabs = [];
-  for (const s of sessions.values()) {
-    if (s.kind === 'term') tabs.push({ kind: 'term', cwd: s.cwd, ai: s.ai, label: s.label });
-    else if (s.kind === 'editor') tabs.push({ kind: 'editor', filePath: s.filePath });
-  }
-  window.gits.saveSession({ tabs });
+  window.gits.saveSession(sessionPayload());
 });
