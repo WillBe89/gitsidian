@@ -1592,21 +1592,37 @@ function ensureCellTag(s) {
     s.pane.classList.add('cell-dragging');
   });
   tag.addEventListener('dragend', () => { cellDragId = null; s.pane.classList.remove('cell-dragging'); s.pane.classList.remove('cell-drop'); });
-  // The pane accepts another cell dropped on it → swap quadrant positions.
-  s.pane.addEventListener('dragover', (e) => {
-    if (!cellDragId || cellDragId === s.id || !activeGroupId) return;
-    e.preventDefault(); s.pane.classList.add('cell-drop');
-  });
+  // A quadrant accepts EITHER a dragged cell (swap) OR a strip tab (place it here).
+  const incoming = () => (cellDragId && cellDragId !== s.id) || (tabDragId && tabDragId !== s.id);
+  s.pane.addEventListener('dragover', (e) => { if (activeGroupId && incoming()) { e.preventDefault(); s.pane.classList.add('cell-drop'); } });
   s.pane.addEventListener('dragleave', (e) => { if (!s.pane.contains(e.relatedTarget)) s.pane.classList.remove('cell-drop'); });
   s.pane.addEventListener('drop', (e) => {
-    if (!cellDragId || cellDragId === s.id || !activeGroupId) return;
+    if (!activeGroupId || !incoming()) return;
     e.preventDefault(); e.stopPropagation();
     s.pane.classList.remove('cell-drop');
-    const dragged = cellDragId; cellDragId = null;
-    swapMembers(dragged, s.id);
+    if (cellDragId && cellDragId !== s.id) { const d = cellDragId; cellDragId = null; swapMembers(d, s.id); return; }
+    if (tabDragId && tabDragId !== s.id) { const d = tabDragId; tabDragId = null; clearTabDropMarks(); placeTabInQuadrant(d, s.id); }
   });
   s.pane.appendChild(tag);
   s.cellTag = tag;
+}
+// Drop a strip tab onto a quadrant → it lives in that slot. In-group tabs swap;
+// outside tabs join the group at that position (respecting the 4-cap).
+function placeTabInQuadrant(tabId, targetId) {
+  const g = activeGroupId ? groups.find((x) => x.id === activeGroupId) : null;
+  if (!g || tabId === targetId || g.members.indexOf(targetId) < 0) return;
+  const dg = groupOf(tabId);
+  if (dg && dg.id === g.id) { swapMembers(tabId, targetId); return; } // already here → swap slots
+  if (g.members.filter((m) => sessions.has(m)).length >= MAX_GROUP) { showToast(`A group holds up to ${MAX_GROUP} tabs.`); return; }
+  if (dg) dg.members = dg.members.filter((m) => m !== tabId);
+  const arr = g.members.slice();
+  arr.splice(arr.indexOf(targetId), 0, tabId); // insert at the dropped slot
+  g.members = arr;
+  cleanupEmptyGroup(dg);
+  activeId = tabId;
+  activeGroupId = g.id;
+  applyLayout();
+  persistSession();
 }
 // Swap two members' positions within the active group (drag-arrange quadrants).
 function swapMembers(aId, bId) {
