@@ -76,11 +76,11 @@
       { "name": "Gitsidian", "schemes": ["gitsidian"] }
     ],
     "fileAssociations": [
-      { "ext": "md", "name": "Markdown Document", "description": "Markdown Document", "role": "Editor", "rank": "Alternate", "icon": "build/icon.png" },
-      { "ext": "markdown", "name": "Markdown Document", "role": "Editor", "rank": "Alternate", "icon": "build/icon.png" },
-      { "ext": "mdx", "name": "MDX Document", "role": "Editor", "rank": "Alternate", "icon": "build/icon.png" },
-      { "ext": "mdown", "name": "Markdown Document", "role": "Editor", "rank": "Alternate", "icon": "build/icon.png" },
-      { "ext": "markdn", "name": "Markdown Document", "role": "Editor", "rank": "Alternate", "icon": "build/icon.png" }
+      { "ext": "md", "name": "Markdown Document", "description": "Markdown Document", "role": "Editor", "rank": "Alternate" },
+      { "ext": "markdown", "name": "Markdown Document", "role": "Editor", "rank": "Alternate" },
+      { "ext": "mdx", "name": "MDX Document", "role": "Editor", "rank": "Alternate" },
+      { "ext": "mdown", "name": "Markdown Document", "role": "Editor", "rank": "Alternate" },
+      { "ext": "markdn", "name": "Markdown Document", "role": "Editor", "rank": "Alternate" }
     ],
     "mac": {
       "target": [
