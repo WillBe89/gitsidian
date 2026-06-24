@@ -2,6 +2,29 @@
 
 All notable changes to Gitsidian.
 
+## 0.8.0 — 2026-06-25
+
+**The final free release.** Development continues in **Mephisto**, the commercial
+successor (private repo); this build gets critical bug/security fixes only.
+
+- **Team chat moved to a collapsible side rail** — chat now docks as a resizable
+  right-hand panel (drag its left edge) with the channel switcher inside, instead of
+  taking a tab. A Settings option chooses how it opens: **push** (shrink the main
+  area) or **overlay** (float over the right edge). The chat button now sits at the
+  far right of the tab strip, next to where the panel opens.
+- **Agent orchestration (human-in-the-loop)** — the headline new direction. Label
+  your AI panes with **roles** (Coordinator, Research, Writer, Reviewer, Tester,
+  Planner, or custom), then **route a selection from one agent into another's
+  composer** to hand work off. Roles are backed by **editable Markdown prompt files**
+  in each project's `.gitsidian/roles/` (copied from a built-in template package);
+  assigning a role points the agent at its own file and asks it to follow it and
+  raise any questions. Model-agnostic — works with any AI CLI.
+- **Drag to reorder quadrant groups** in the tab strip.
+- **Quiet auto-hiding terminal scrollbar** — the thumb stays invisible until you
+  hover or scroll, with a reserved gutter so text never sits under it.
+- **Relicensed** to the **PolyForm Noncommercial License 1.0.0** going forward
+  (versions 0.7.4 and earlier remain MIT).
+
 ## 0.7.4 — 2026-06-24
 
 - **Groups persist across relaunch** — your quadrant groups (their names, layout,

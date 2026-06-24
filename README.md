@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="gitsidian3.png" width="110" alt="Gitsidian logo" />
+<img src="mephisto-logo.png" width="260" alt="Gitsidian — Mephisto" />
 
 # Gitsidian
 
@@ -15,6 +15,14 @@ Open any git repo or Obsidian vault and get **embedded terminals**, a real **cod
 ![license: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm_Noncommercial-blue) ![platforms](https://img.shields.io/badge/platforms-macOS_·_Windows_·_Linux-555)
 
 </div>
+
+---
+
+> **Gitsidian 0.8.0 is the final free release.** Development now continues in
+> **Mephisto** — the commercial successor — in a separate, private repository. This
+> repo stays source-available under PolyForm Noncommercial and will get **critical
+> bug and security fixes only**. For Mephisto and commercial licensing, reach out via
+> [willbe.dev](https://willbe.dev).
 
 ---
 
@@ -173,11 +181,11 @@ Or just push a `v*` tag — CI builds **macOS, Windows, and Linux** and attaches
 
 ## Roadmap
 
-See **[ROADMAP.md](ROADMAP.md)** for what's planned. Near-term: multi-select for
-bulk file operations, more editor languages and format-on-save, conflict help for
-pulls, and real-time team chat. The biggest one is full **code signing &
-notarization** (the build is wired for it; it just needs a paid Apple Developer ID)
-to remove the first-launch security prompt — see **Support**.
+This free build is feature-complete at **0.8.0**. The roadmap — agent orchestration,
+code signing & notarization, real-time team chat, and more — now lives in **Mephisto**,
+the commercial successor. **[ROADMAP.md](ROADMAP.md)** records what shipped here and
+the direction the paid build takes it. This repo continues to receive **critical bug
+and security fixes**.
 
 ## Support
 

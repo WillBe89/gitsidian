@@ -1,8 +1,12 @@
 # Roadmap
 
-Ideas for future releases — roughly in priority order, not firm commitments.
-Suggestions and contributions welcome; sponsorship helps fund the signing/notarization
-that removes the OS security prompts (see the README's **Support** section).
+> **Heads up:** the free Gitsidian build is feature-complete at **0.8.0** — the final
+> free release. Active development of everything below now continues in **Mephisto**,
+> the commercial successor (private). This file is kept as a record of what shipped in
+> the free build and the direction the paid build takes it. The free repo still gets
+> **critical bug and security fixes**. Commercial licensing: [willbe.dev](https://willbe.dev).
+
+Ideas — roughly in priority order, not firm commitments.
 
 ## 0.8 — the next big themes
 
@@ -120,6 +124,13 @@ Bigger bets, roughly once the core is signed and stable:
   themes.
 
 ## Shipped recently
+
+**0.8.0 (final free release):** team chat docked to a **resizable collapsible side
+rail** (push/overlay setting; toggle moved to the right edge) · **agent orchestration
+(human-in-the-loop)** — role labels on AI panes, route a selection from one agent into
+another's composer, and per-project **editable role prompts** in `.gitsidian/roles/`
+(assigning a role points the agent at its own file) · drag to reorder quadrant groups ·
+quiet auto-hiding terminal scrollbar · relicensed to PolyForm Noncommercial going forward.
 
 **0.7.4:** **groups persist across relaunch** — names, layout, members, and the
 active group are restored when you reopen Gitsidian.
