@@ -44,8 +44,7 @@ newTermBtn.addEventListener('click', () => openSession(undefined, 'terminal', 's
 let groups = [];            // [{ id, name, members: [sessionId, …] }]  (2–4 members)
 let activeGroupId = null;   // when set, the terminals area shows this group's grid
 let paneGroupSeq = 0;
-let selectMode = false;     // picking tabs to form a group
-const selectedIds = new Set();
+const selectedIds = new Set(); // tabs held via shift-click (a selection, not a group yet)
 const groupChipEls = new Map(); // groupId -> chip element
 let tabDragId = null;       // session id being drag-reordered in the strip
 let cellDragId = null;      // session id being dragged between quadrant cells
@@ -58,8 +57,12 @@ const GRID_AREAS = {
 };
 const GRID_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>';
 
-const groupBtn = el('button', { class: 'new-tab group-toggle', title: 'Group 2–4 tabs into a quadrant view', html: GRID_SVG });
-groupBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleSelectMode(); });
+const groupBtn = el('button', { class: 'new-tab group-toggle', title: 'Shift-click 2–4 tabs, then click here to group them', html: GRID_SVG });
+groupBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (selectedIds.size >= 2) createGroupFromSelection();
+  else showToast('Shift-click 2–4 tabs to hold them, then click here (or right-click) to group.');
+});
 
 // Keep the persistent "+" and group controls at the end of the tab strip.
 function appendTabControls() {
@@ -76,6 +79,7 @@ tabbar.addEventListener('drop', (e) => {
   if (!tabDragId) return;
   if (e.target.closest && e.target.closest('.tab, .group-chip')) return;
   e.preventDefault();
+  if (selectionDragging()) { tabDragId = null; clearTabDropMarks(); createGroupFromSelection(); return; }
   const id = tabDragId; tabDragId = null; clearTabDropMarks();
   const s = sessions.get(id); if (!s) return;
   const wasGrouped = !!groupOf(id);
@@ -1374,24 +1378,31 @@ function attachTab(session, { tag, tagClass = 'tab-ai', tabTitle = '' } = {}) {
   );
   tab.addEventListener('click', (e) => {
     if (e.target.classList.contains('tab-close')) { closeSession(session.id); return; }
-    if (selectMode) { toggleSelected(session.id); return; }
-    // Shift+click another tab → quickly group the two (or add to the active group).
-    if (e.shiftKey && activeId && activeId !== session.id) { quickGroup(session.id); return; }
+    // Shift-click holds tabs in a selection (not a group yet).
+    if (e.shiftKey) { toggleSelect(session.id); return; }
+    clearSelection();
     activate(session.id);
   });
-  // Right-click a tab → grouping options.
+  // Right-click a tab → grouping options (or act on the held selection).
   tab.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    showContextMenu(e.clientX, e.clientY, tabMenuItems(session));
+    if (selectedIds.has(session.id) && selectedIds.size >= 2) {
+      showContextMenu(e.clientX, e.clientY, [
+        { label: `Create group from ${selectedIds.size} tabs…`, onClick: () => createGroupFromSelection() },
+        { label: 'Clear selection', onClick: () => clearSelection() },
+      ]);
+    } else {
+      showContextMenu(e.clientX, e.clientY, tabMenuItems(session));
+    }
   });
   const titleEl = tab.querySelector('.tab-title');
-  titleEl.title = 'Double-click to rename · Shift-click another tab to group · drag to reorder';
+  titleEl.title = 'Double-click to rename · Shift-click to select · drag to reorder';
   titleEl.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename(titleEl, session); });
-  // Drag to reorder tabs in the strip.
+  // Drag to reorder tabs in the strip (or drag a held selection together to group).
   tab.draggable = true;
   tab.addEventListener('dragstart', (e) => {
-    if (selectMode || titleEl.classList.contains('editing')) { e.preventDefault(); return; }
+    if (titleEl.classList.contains('editing')) { e.preventDefault(); return; }
     tabDragId = session.id;
     e.dataTransfer.effectAllowed = 'move';
     try { e.dataTransfer.setData('text/plain', 'tab:' + session.id); } catch {}
@@ -1408,8 +1419,11 @@ function attachTab(session, { tag, tagClass = 'tab-ai', tabTitle = '' } = {}) {
     tab.classList.add(z === 'group' ? 'drop-group' : z === 'after' ? 'drop-after' : 'drop-before');
   });
   tab.addEventListener('drop', (e) => {
-    if (!tabDragId || tabDragId === session.id) return;
+    if (!tabDragId) return;
     e.preventDefault(); e.stopPropagation();
+    // Dragging a held selection (2+) anywhere → make a group from it.
+    if (selectionDragging()) { tabDragId = null; clearTabDropMarks(); createGroupFromSelection(); return; }
+    if (tabDragId === session.id) { tabDragId = null; clearTabDropMarks(); return; }
     const draggedId = tabDragId; tabDragId = null;
     const z = dropZone(e, tab.getBoundingClientRect());
     clearTabDropMarks();
@@ -1605,64 +1619,30 @@ function swapMembers(aId, bId) {
   persistSession();
 }
 
-// ---- Select mode: pick 2–4 tabs, then name them into a group ----
-function toggleSelectMode() {
-  if (selectMode) { exitSelectMode(); return; }
-  if ([...sessions.values()].filter((s) => !groupOf(s.id)).length < 2) {
-    showToast('Open at least two ungrouped tabs to make a group.'); return;
-  }
-  selectMode = true;
-  selectedIds.clear();
-  if (activeId && !groupOf(activeId)) selectedIds.add(activeId);
-  tabbar.classList.add('selecting');
-  groupBtn.classList.add('on');
-  showSelectBar();
-  refreshSelectionUI();
-}
-function exitSelectMode() {
-  selectMode = false;
-  selectedIds.clear();
-  tabbar.classList.remove('selecting');
-  groupBtn.classList.remove('on');
-  for (const s of sessions.values()) s.tabEl && s.tabEl.classList.remove('selected');
-  hideSelectBar();
-}
-function toggleSelected(id) {
-  if (groupOf(id)) { showToast('That tab is already in a group.'); return; }
-  if (selectedIds.has(id)) selectedIds.delete(id);
-  else if (selectedIds.size >= MAX_GROUP) { showToast(`A group holds up to ${MAX_GROUP} tabs.`); return; }
-  else selectedIds.add(id);
-  refreshSelectionUI();
-}
-function refreshSelectionUI() {
+// ---- Multi-select (shift-click) → create a group ----
+// Shift-click tabs to hold 2–4, then right-click → Create group, click the group
+// button, or drag the held tabs together. It's a selection, not a group, until then.
+function clearSelection() { if (selectedIds.size) { selectedIds.clear(); updateSelectionUI(); } }
+function updateSelectionUI() {
   for (const [sid, s] of sessions) s.tabEl && s.tabEl.classList.toggle('selected', selectedIds.has(sid));
-  const bar = document.getElementById('select-bar');
-  if (!bar) return;
-  const n = selectedIds.size;
-  bar.querySelector('.select-count').textContent = `${n} selected`;
-  const mk = bar.querySelector('.select-make');
-  mk.disabled = n < 2 || n > MAX_GROUP;
-  mk.textContent = n >= 2 && n <= MAX_GROUP ? `Group these ${n}` : 'Pick 2–4 tabs';
+  groupBtn.classList.toggle('on', selectedIds.size >= 2);
 }
-function showSelectBar() {
-  if (document.getElementById('select-bar')) return;
-  const make = el('button', { class: 'select-make block-btn primary', text: 'Pick 2–4 tabs', disabled: 'true' });
-  const cancel = el('button', { class: 'select-cancel block-btn', text: 'Cancel' });
-  make.addEventListener('click', confirmGroup);
-  cancel.addEventListener('click', exitSelectMode);
-  const bar = el('div', { id: 'select-bar', class: 'select-bar' },
-    el('span', { class: 'select-hint', text: 'Click tabs to add · ' }),
-    el('span', { class: 'select-count', text: '0 selected' }), cancel, make);
-  document.body.appendChild(bar);
+function toggleSelect(id) {
+  if (groupOf(id)) { showToast('That tab is already in a group.'); return; }
+  // Seed with the active tab so "active tab + shift-click another" holds both.
+  if (selectedIds.size === 0 && activeId && activeId !== id && !groupOf(activeId)) selectedIds.add(activeId);
+  if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+  updateSelectionUI();
 }
-function hideSelectBar() { const b = document.getElementById('select-bar'); if (b) b.remove(); }
-async function confirmGroup() {
+const selectionDragging = () => selectedIds.size >= 2 && tabDragId && selectedIds.has(tabDragId);
+async function createGroupFromSelection() {
   const ids = [...selectedIds].filter((id) => sessions.has(id) && !groupOf(id));
-  if (ids.length < 2 || ids.length > MAX_GROUP) return;
+  if (ids.length < 2) { showToast('Shift-click 2–4 tabs to hold them, then group.'); return; }
+  if (ids.length > MAX_GROUP) { showToast(`A group holds up to ${MAX_GROUP} tabs.`); return; }
   const name = await uiPrompt('Name this group:', `Group ${groups.length + 1}`, 'e.g. Cockpit');
   if (name === null) return;
+  clearSelection();
   createGroup(ids, name.trim() || `Group ${groups.length + 1}`);
-  exitSelectMode();
 }
 function createGroup(ids, name) {
   const g = { id: `tg${++paneGroupSeq}`, name, members: ids.slice(0, MAX_GROUP), cols: 50, rows: 50, expanded: false };
@@ -1674,18 +1654,6 @@ function createGroup(ids, name) {
   persistSession();
 }
 // Shift-click path: pair two tabs, or add a tab to the active group.
-function quickGroup(id) {
-  if (!sessions.has(id) || id === activeId) return;
-  const tg = groupOf(id);
-  if (tg) { activateGroup(tg.id); return; }
-  const ag = groupOf(activeId);
-  if (ag) {
-    if (ag.members.length >= MAX_GROUP) { showToast(`A group holds up to ${MAX_GROUP} tabs.`); return; }
-    ag.members.push(id); activateGroup(ag.id);
-  } else {
-    createGroup([activeId, id], `Group ${groups.length + 1}`);
-  }
-}
 function dissolveGroup(g) {
   const survivor = g.members.filter((id) => sessions.has(id))[0] || null;
   groups = groups.filter((x) => x.id !== g.id);
@@ -1777,6 +1745,7 @@ function renderGroupChips() {
       chip.addEventListener('drop', (e) => {
         if (!tabDragId) return;
         e.preventDefault(); e.stopPropagation();
+        if (selectionDragging()) { tabDragId = null; clearTabDropMarks(); createGroupFromSelection(); return; }
         const id = tabDragId; tabDragId = null; clearTabDropMarks();
         addToGroup(id, g);
       });
@@ -1789,23 +1758,27 @@ function renderGroupChips() {
         ]);
       });
       groupChipEls.set(g.id, chip);
-      tabbar.insertBefore(chip, tabbar.firstChild);
     }
     chip.querySelector('.group-chip-name').textContent = g.name;
     chip.querySelector('.group-chip-count').textContent = String(n);
     chip.querySelector('.group-chip-icon').title = g.expanded ? 'Hide this group’s tabs' : 'Show this group’s tabs';
     chip.classList.toggle('active', g.id === activeGroupId);
     chip.classList.toggle('expanded', !!g.expanded);
-    // When expanded, line the member tabs up right after their chip.
-    if (g.expanded) {
-      let anchor = chip;
-      for (const id of g.members) {
-        const s = sessions.get(id);
-        if (s && s.tabEl) { tabbar.insertBefore(s.tabEl, anchor.nextSibling); anchor = s.tabEl; }
-      }
-    }
   }
+  layoutTabStrip();
   refreshGroupBadges();
+}
+// Sensible strip order: each group's chip (+ its tabs when expanded), then the
+// ungrouped tabs, then the +/group controls. Collapsed groups show only the chip.
+function layoutTabStrip() {
+  for (const g of groups) {
+    const chip = groupChipEls.get(g.id);
+    if (chip) tabbar.appendChild(chip);
+    // Members sit right after their chip; collapsed ones are display:none via .hidden.
+    for (const id of g.members) { const s = sessions.get(id); if (s && s.tabEl) tabbar.appendChild(s.tabEl); }
+  }
+  for (const [id, s] of sessions) { if (s.tabEl && !groupOf(id)) tabbar.appendChild(s.tabEl); }
+  appendTabControls();
 }
 // Right-click menu for an individual tab (grouping actions).
 function tabMenuItems(session) {
@@ -1824,7 +1797,7 @@ function tabMenuItems(session) {
   if (activeId && activeId !== session.id && !ag) {
     items.push({ label: `Group with "${(sessions.get(activeId) || {}).label || 'current tab'}"`, onClick: () => createGroup([activeId, session.id], `Group ${groups.length + 1}`) });
   }
-  items.push({ label: 'Group tabs…', onClick: () => toggleSelectMode() });
+  items.push({ label: 'Tip: Shift-click tabs to select, then group', onClick: () => showToast('Shift-click 2–4 tabs to hold them, then right-click → Create group (or click the grid button).') });
   return items;
 }
 
@@ -1850,6 +1823,7 @@ function closeSession(id) {
   s.pane.remove();
   s.tabEl.remove();
   sessions.delete(id);
+  if (selectedIds.delete(id)) updateSelectionUI();
   // If it was in a group, drop it; a group below 2 members dissolves.
   const g = groupOf(id);
   if (g) {
