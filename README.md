@@ -46,6 +46,10 @@ Gitsidian brings it all into **one calm window**: a sidebar of your projects, re
 
 ## Screenshots
 
+Building and using **quadrant groups** — set up 2–4 panes per group (multiple groups at once) and run several AI sessions, a terminal, an editor, and team chat side by side. Built for power users and teams:
+
+![Gitsidian — quadrant groups in action](screenshots/gitsidian-demo.gif)
+
 An AI session and team chat side by side — projects in the sidebar, a Slack-style chat composer, and any two tabs split:
 
 ![Gitsidian — AI session, team chat, and split view](screenshots/chat-and-ai.png)

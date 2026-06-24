@@ -2,6 +2,14 @@
 
 All notable changes to Gitsidian.
 
+## 0.7.3 — 2026-06-24
+
+- **Fix:** terminals are now properly framed inside their pane — text could bleed
+  **under the scrollbar** (and get lost when you selected everything) or over the
+  top edge, especially in quadrant groups. The columns now leave a clean gutter for
+  the scrollbar.
+- Added an animated demo of quadrant groups to the README.
+
 ## 0.7.2 — 2026-06-24
 
 Quadrant groups, polished into a real cockpit.
