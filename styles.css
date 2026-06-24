@@ -804,13 +804,18 @@ body.row-resizing, body.row-resizing * { cursor: row-resize !important; user-sel
 
 /* Channel list + conversation layout (mirrors the Review/History panes) */
 /* Collapsible team-chat side panel (right rail). */
-.chat-rail { flex: 0 0 360px; min-width: 280px; max-width: 520px; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--panel); }
+.chat-rail { position: relative; flex: 0 0 var(--chat-rail-w, 360px); display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--panel); }
 .chat-rail.hidden { display: none; }
 .shell { position: relative; }
-.shell.chat-overlay .chat-rail { position: absolute; top: 0; right: 0; bottom: 0; width: 380px; flex: none; z-index: 40; box-shadow: -12px 0 32px rgba(0,0,0,0.42); }
+.shell.chat-overlay .chat-rail { position: absolute; top: 0; right: 0; bottom: 0; width: var(--chat-rail-w, 360px); flex: none; z-index: 40; box-shadow: -12px 0 32px rgba(0,0,0,0.42); }
 .chat-rail .chat-body2 { flex: 1; }
 .chat-rail-close { background: none; border: 0; color: var(--muted); font-size: 17px; line-height: 1; cursor: pointer; padding: 0 4px; }
 .chat-rail-close:hover { color: var(--text); }
+/* Left-edge drag handle to resize the rail. */
+.chat-rail-resizer { position: absolute; top: 0; left: -3px; bottom: 0; width: 7px; cursor: ew-resize; z-index: 41; }
+.chat-rail-resizer:hover, .chat-rail-resizer.dragging { background: var(--accent); opacity: 0.5; }
+/* Chat toggle pinned to the far right of the tab strip (near where the rail opens). */
+.tabbar .chat-toggle { margin-left: auto; }
 #open-team.on { color: var(--accent-2); }
 .chat-body2 { flex: 1; display: flex; min-height: 0; }
 .chat-channels { flex: 0 0 180px; max-width: 220px; overflow: auto; border-right: 1px solid var(--line); padding: 6px 0; background: var(--panel); }

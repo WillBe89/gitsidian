@@ -65,10 +65,18 @@ groupBtn.addEventListener('click', (e) => {
   else showToast('Shift-click 2–4 tabs to hold them, then click here (or right-click) to group.');
 });
 
-// Keep the persistent "+" and group controls at the end of the tab strip.
+// Team-chat toggle — lives at the far right of the strip (next to where the rail
+// opens) so it's predictable. id kept as 'open-team' for the badge + rail helpers.
+const CHAT_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.2A8 8 0 1 1 21 12z"/></svg>';
+const chatBtn = el('button', { id: 'open-team', class: 'new-tab chat-toggle', title: 'Team chat', 'aria-label': 'Team chat', html: CHAT_SVG });
+chatBtn.addEventListener('click', () => toggleChatRail());
+
+// Keep the persistent "+" and group controls at the end of the tab strip;
+// the chat toggle is pinned to the far right (margin-left:auto in CSS).
 function appendTabControls() {
   tabbar.appendChild(newTermBtn);
   tabbar.appendChild(groupBtn);
+  tabbar.appendChild(chatBtn);
 }
 
 const groupOf = (id) => groups.find((g) => g.members.includes(id)) || null;
@@ -316,6 +324,7 @@ function loadSettings() {
     sidebarWidth: typeof s.sidebarWidth === 'number' ? Math.max(200, Math.min(520, s.sidebarWidth)) : 280,
     splitRatio: typeof s.splitRatio === 'number' ? Math.max(20, Math.min(80, s.splitRatio)) : 50,
     chatPanel: s.chatPanel === 'overlay' ? 'overlay' : 'push', // how the chat side rail opens
+    chatRailWidth: typeof s.chatRailWidth === 'number' ? Math.max(280, Math.min(720, s.chatRailWidth)) : 360,
   };
 }
 let settings = loadSettings();
@@ -374,6 +383,9 @@ function applyChatPanelMode() {
   const shell = document.querySelector('.shell');
   if (shell) shell.classList.toggle('chat-overlay', settings.chatPanel === 'overlay');
 }
+function applyChatRailWidth() {
+  document.documentElement.style.setProperty('--chat-rail-w', settings.chatRailWidth + 'px');
+}
 // Refit the visible terminal(s) — used after a resize drag.
 function refitTerminals() {
   const g = activeGroupId ? groups.find((x) => x.id === activeGroupId) : null;
@@ -385,6 +397,7 @@ applyTheme();
 applySidebarWidth();
 applyTabLabels();
 applyChatPanelMode();
+applyChatRailWidth();
 
 // ---------------------------------------------------------------------------
 // AI picker
@@ -3147,6 +3160,17 @@ function buildChatRail() {
   });
   const closeBtn = el('button', { class: 'chat-rail-close', title: 'Close chat panel', text: '×' });
   closeBtn.addEventListener('click', () => closeChatRail());
+  // Drag the left edge to resize the rail (width grows toward the window's left).
+  const resizer = el('div', { class: 'chat-rail-resizer', title: 'Drag to resize' });
+  resizer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startDrag(resizer, (ev) => {
+      settings.chatRailWidth = Math.max(280, Math.min(720, Math.round(window.innerWidth - ev.clientX)));
+      applyChatRailWidth();
+      refitTerminals();
+    });
+  });
+  rail.appendChild(resizer);
   rail.appendChild(el('div', { class: 'chat-head' },
     el('span', { class: 'chat-title', text: 'Team chat' }),
     el('div', { class: 'chat-head-right' }, el('span', { class: 'chat-sub', text: teamMe ? `you: ${teamMe}` : '' }), avatarBtn, closeBtn)));
@@ -3485,7 +3509,6 @@ function refreshGroupBadges() {
 // ---------------------------------------------------------------------------
 refreshBtn.addEventListener('click', () => loadProjects({ fetch: true }));
 document.getElementById('new-group').addEventListener('click', () => addGroup());
-document.getElementById('open-team').addEventListener('click', () => toggleChatRail());
 
 addFolderBtn.addEventListener('click', async () => {
   const res = await window.gits.addFolder();
