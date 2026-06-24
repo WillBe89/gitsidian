@@ -26,7 +26,7 @@ Open any git repo or Obsidian vault and get **embedded terminals**, a real **cod
 - **Git without the terminal** — publish, commit, push, pull, **review & stage** (per-file *or* per-hunk), commit history, branch switching, and **open a PR** — all from the sidebar, with safety guard-rails.
 - **Run any AI CLI** — Claude Code, Codex, Gemini, Ollama, Aider and more — auto-detected, several at once, each a real terminal in its own tab.
 - **Work as a team** — built-in **chat** that uses your GitHub account as identity (no extra accounts or servers), with a Slack-style composer, custom names/avatars, message & channel management, plus opt-in **AI command dispatch**.
-- **Quadrant tab groups** — group **2–4 tabs** into a grid (side-by-side or 2×2) and keep several groups at once, so you can set up a cockpit of AI sessions, terminals, an editor, or a chat and watch them together.
+- **Quadrant tab groups** — group **2–4 tabs** into a grid (side-by-side or 2×2) and keep several groups at once, so you can set up a cockpit of AI sessions, terminals, an editor, or a chat and watch them together. Drag tabs between quadrants, resize the cells, and your **groups persist across relaunch**.
 - **Make it yours** — seven themes plus **fully custom accent + background colours**, command palette (⌘P), multi-file search, full **file management** in the tree, drag-and-drop, paste-an-image, and built-in auto-update.
 
 > **New in 0.7:** opens your Markdown files, becomes the app you open a terminal *anywhere* with, full file management in the tree, a polished chat composer with message/channel management, and a theme picker with custom colours.
@@ -88,7 +88,7 @@ The built-in editor and Markdown reader — syntax-highlighted code, with `.md` 
 - **Team chat, built on GitHub** — message your team from inside Gitsidian using your GitHub account as your identity. A **channel = one repo** (its chat issue); switch channels, invite by username **or email** (GitHub prompts non-members to sign up), with markdown, @mentions, and a public-repo warning. A **Slack-style composer** (bold/italic/strikethrough/code/lists/quote/link + emoji), a **display-name alias** and **custom avatar**, **copy** any message, **delete** messages, and **delete a channel** (with a `.md` transcript backup). No server, no extra accounts.
 - **Command dispatch (opt-in)** — propose an AI prompt for a teammate to run in a specific repo; they get an Approve card and it's *staged* in that repo's session for them to review and send. Guard-railed: off by default, AI-prompts-only, local approval + a final human send, risky-pattern warnings, and it only runs in a repo they actually have cloned.
 - **Auto-reload** — when a file you have open changes on disk (e.g. an AI agent edits it), the editor reloads it — keeping your unsaved edits if you have any.
-- **Session persistence** — your open terminal and editor tabs reopen when you relaunch.
+- **Session persistence** — your open terminal and editor tabs reopen when you relaunch, **and your quadrant groups come back too** (names, layout, and members).
 - **Built-in auto-update** — Gitsidian checks GitHub for new releases and, with your approval, downloads and launches the installer. The current version shows in the sidebar and Settings.
 
 ## Install

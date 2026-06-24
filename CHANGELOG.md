@@ -2,6 +2,13 @@
 
 All notable changes to Gitsidian.
 
+## 0.7.4 — 2026-06-24
+
+- **Groups persist across relaunch** — your quadrant groups (their names, layout,
+  which tabs belong to them, and the active group) come back when you reopen
+  Gitsidian, so you don't have to rebuild your cockpit every session. Terminal and
+  editor tabs restore as before; a chat pane in a group reopens from the chat icon.
+
 ## 0.7.3 — 2026-06-24
 
 - **Fix:** terminals are now properly framed inside their pane — text could bleed

@@ -20,14 +20,16 @@ Next, make that seamless and broader.
 - **Reopen-at-folder polish** — remember the last command per folder.
 
 ### Quadrant groups — remaining polish
-Quadrant grouping landed in 0.7.1 and was polished hard in 0.7.2 (shift-click to
-select → create, collapse-to-hide, drag-to-group/ungroup, drag-arrange quadrants,
-resizable X/Y dividers, activity dots, compact tabs). Still to do:
+Quadrant grouping shipped across 0.7.1–0.7.4 (select-to-group, collapse-to-hide,
+drag-to-group/ungroup, drag-arrange quadrants, resizable dividers, activity dots,
+compact tabs, and **persistence across relaunch**). Still to do:
 
-- **Persist groups across relaunch** (groups are runtime-only today).
 - **Keyboard focus-switching** between cells + a "maximise this cell" toggle.
 - **Multiple live chats** — a chat can be a cell today, but only one chat session
-  exists; allow several at once (per-session chat state refactor).
+  exists; allow several at once (per-session chat state refactor). This unlocks the
+  "master user: one group per team, each with its own chat" workflow.
+- **Save / load named workspaces** — snapshot a whole set of groups + tabs and
+  switch between them (e.g. "Client A", "Personal").
 
 ### Advanced team chat
 Make chat feel like a real chat app, not just issue comments.
@@ -35,6 +37,14 @@ Make chat feel like a real chat app, not just issue comments.
 - **Reactions, threads, and per-channel unread counts.**
 - **Edit a sent message** in place (today: delete + repost).
 - *(Real-time delivery + presence need a relay server — see 1.0.)*
+
+### Localisation (i18n)
+The UI is English-only today — strings are hardcoded and it doesn't follow the
+system locale. The plan: a small message catalog + a `t('key')` layer, defaulting
+to the **system language**, with a **language picker in Settings** as an override.
+Step one is a string-extraction pass across `renderer.js` / `index.html`;
+translations (human or machine, per language) follow. A meaningful effort, kept
+lower priority than signing while the audience is mostly English-speaking devs.
 
 ## 1.0 — when it's signed
 
@@ -57,7 +67,31 @@ Make chat feel like a real chat app, not just issue comments.
 - **Distribution:** auto-update the Homebrew cask from CI, more Linux formats
   (`.rpm`, system tray icon).
 
+## Future ideas / later
+Bigger bets, roughly once the core is signed and stable:
+
+- **Settings & layout sync** — back up projects, groups, themes, and aliases to your
+  hub repo so a new machine picks up where you left off.
+- **AI session templates** — saved prompts/commands you can launch into a new tab
+  or a whole group in one click (e.g. "review changes", "write tests", "triage").
+- **Per-project config** — remember the AI + environment variables per project, plus
+  a checked-in `.gitsidian` for shared team defaults.
+- **Extensibility** — user commands/snippets in the composer and a small plugin hook
+  for custom panes.
+- **Detach a tab or group to its own window** for multi-monitor cockpits.
+- **Richer Markdown reader** — tables, task lists, mermaid diagrams, and a
+  table-of-contents for long notes (leaning into the default-`.md`-app role).
+- **Accessibility** — full keyboard navigation, screen-reader labels, high-contrast
+  themes.
+
 ## Shipped recently
+
+**0.7.4:** **groups persist across relaunch** — names, layout, members, and the
+active group are restored when you reopen Gitsidian.
+
+**0.7.3:** terminal framing fix — text no longer bleeds under the scrollbar (or is
+lost on select-all) or over the top edge; added an animated quadrant-groups demo to
+the README.
 
 **0.7.2:** quadrant groups polished — shift-click to select then create a group ·
 collapse truly hides a group's tabs · drag-arrange quadrants (tab→quadrant, label
