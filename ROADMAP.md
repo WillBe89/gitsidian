@@ -19,6 +19,18 @@ Next, make that seamless and broader.
   picking up from another terminal is a single click.
 - **Reopen-at-folder polish** — remember the last command per folder.
 
+### Multi-pane workspace — up to 4 quadrants
+Today's split shows any two tabs side by side. Power users want more: a **grid of
+up to four panes** (2×2 quadrants) in one window — e.g. two or three AI sessions
+plus a terminal or editor — so you can set up a cockpit and glance across all of it
+at once, switching focus without tab-hopping.
+
+- **2×2 quadrant layout** (plus 1×3 / 2×1 presets), each cell any tab type
+  (terminal, AI, editor, chat, diff).
+- **Drag a tab into a quadrant**; resizable dividers between cells; layout persists.
+- Keyboard focus-switching between panes; "maximise this pane" toggle.
+- Builds directly on the existing split engine.
+
 ### Advanced team chat
 Make chat feel like a real chat app, not just issue comments.
 
@@ -42,8 +54,8 @@ Make chat feel like a real chat app, not just issue comments.
 - **Editor:** more languages, a code outline, format-on-save.
 - **Git:** conflict helper for non-fast-forward pulls, stash management,
   remember-the-AI per project + per-project environment variables.
-- **Sessions/UI:** drag tabs to reorder, saved "workspaces", split into >2 panes,
-  terminal search (⌘F), follow-system Dark/Light + more theme presets.
+- **Sessions/UI:** drag tabs to reorder, saved "workspaces", terminal search (⌘F),
+  follow-system Dark/Light + more theme presets.
 - **Distribution:** auto-update the Homebrew cask from CI, more Linux formats
   (`.rpm`, system tray icon).
 

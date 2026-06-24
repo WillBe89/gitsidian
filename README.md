@@ -45,13 +45,13 @@ Gitsidian brings it all into **one calm window**: a sidebar of your projects, re
 
 ## Screenshots
 
-Projects organised into groups, with one-click git status on each:
+An AI session and team chat side by side — projects in the sidebar, a Slack-style chat composer, and any two tabs split:
 
-![Gitsidian — projects and git status](screenshots/overview.png)
+![Gitsidian — AI session, team chat, and split view](screenshots/chat-and-ai.png)
 
-Several AI sessions running side by side, each in its own tab:
+The built-in editor and Markdown reader — syntax-highlighted code, with `.md` files rendered (Gitsidian can be your default Markdown app):
 
-![Gitsidian — multiple sessions](screenshots/sessions.png)
+![Gitsidian — built-in editor and Markdown reader](screenshots/editor.png)
 
 ## Features
 
