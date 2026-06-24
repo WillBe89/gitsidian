@@ -803,6 +803,15 @@ body.row-resizing, body.row-resizing * { cursor: row-resize !important; user-sel
 .chat-warn { flex: 0 0 auto; padding: 6px 14px; font-size: 11.5px; background: rgba(226,58,99,0.12); color: #ff95ad; border-bottom: 1px solid rgba(226,58,99,0.35); }
 
 /* Channel list + conversation layout (mirrors the Review/History panes) */
+/* Collapsible team-chat side panel (right rail). */
+.chat-rail { flex: 0 0 360px; min-width: 280px; max-width: 520px; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--panel); }
+.chat-rail.hidden { display: none; }
+.shell { position: relative; }
+.shell.chat-overlay .chat-rail { position: absolute; top: 0; right: 0; bottom: 0; width: 380px; flex: none; z-index: 40; box-shadow: -12px 0 32px rgba(0,0,0,0.42); }
+.chat-rail .chat-body2 { flex: 1; }
+.chat-rail-close { background: none; border: 0; color: var(--muted); font-size: 17px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.chat-rail-close:hover { color: var(--text); }
+#open-team.on { color: var(--accent-2); }
 .chat-body2 { flex: 1; display: flex; min-height: 0; }
 .chat-channels { flex: 0 0 180px; max-width: 220px; overflow: auto; border-right: 1px solid var(--line); padding: 6px 0; background: var(--panel); }
 .chat-channels-head { padding: 4px 14px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }

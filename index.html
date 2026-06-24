@@ -78,6 +78,9 @@
           </div>
         </div>
       </section>
+
+      <!-- Collapsible team-chat side panel (built lazily in renderer.js) -->
+      <aside id="chat-rail" class="chat-rail hidden"></aside>
     </div>
 
     <!-- Import-repo modal -->
@@ -134,6 +137,11 @@
               <label class="check-row"><input type="checkbox" id="settings-italic" /> Italic terminal text</label>
               <label class="check-row"><input type="checkbox" id="settings-compact-tabs" /> Hide tab names</label>
               <label class="check-row"><input type="checkbox" id="settings-hide-tags" /> Hide tab type tags (Terminal, Claude, …)</label>
+              <label class="mini-label">Chat panel opens by</label>
+              <select id="settings-chat-panel">
+                <option value="push">Pushing the content aside</option>
+                <option value="overlay">Floating over the content</option>
+              </select>
             </section>
             <section class="settings-sec hidden" data-sec="sessions">
               <label class="mini-label">Scrollback (lines kept per terminal)</label>

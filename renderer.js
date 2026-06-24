@@ -315,6 +315,7 @@ function loadSettings() {
     theme: (s.theme === 'custom' || THEMES[s.theme]) ? s.theme : (s.theme === 'light' ? 'day' : 'midnight'), // migrate old dark/light
     sidebarWidth: typeof s.sidebarWidth === 'number' ? Math.max(200, Math.min(520, s.sidebarWidth)) : 280,
     splitRatio: typeof s.splitRatio === 'number' ? Math.max(20, Math.min(80, s.splitRatio)) : 50,
+    chatPanel: s.chatPanel === 'overlay' ? 'overlay' : 'push', // how the chat side rail opens
   };
 }
 let settings = loadSettings();
@@ -369,6 +370,10 @@ function applyTabLabels() {
   document.body.classList.toggle('tabs-no-name', settings.hideTabLabels);
   document.body.classList.toggle('tabs-no-tag', settings.hideTabTags);
 }
+function applyChatPanelMode() {
+  const shell = document.querySelector('.shell');
+  if (shell) shell.classList.toggle('chat-overlay', settings.chatPanel === 'overlay');
+}
 // Refit the visible terminal(s) — used after a resize drag.
 function refitTerminals() {
   const g = activeGroupId ? groups.find((x) => x.id === activeGroupId) : null;
@@ -379,6 +384,7 @@ applyAccent();
 applyTheme();
 applySidebarWidth();
 applyTabLabels();
+applyChatPanelMode();
 
 // ---------------------------------------------------------------------------
 // AI picker
@@ -1515,7 +1521,6 @@ function activate(id) {
   const s = sessions.get(id);
   if (s) {
     s.unread = false; if (s.tabEl) s.tabEl.classList.remove('unread');
-    if (s.kind === 'chat' && !teamAdding) markSeen(); // clear the unread badge when you look at chat
     focusSession(s);
     refreshGroupBadges();
   }
@@ -1878,8 +1883,13 @@ function reorderGroup(draggedGid, targetGid, after) {
 // Right-click menu for an individual tab (grouping actions).
 function tabMenuItems(session) {
   const items = [];
-  // Orchestration: assign an agent role (Coordinator / Research / …).
-  items.push({ label: session.role ? `Role: ${session.role} (change…)` : 'Set role…', onClick: () => { const r = session.tabEl.getBoundingClientRect(); pickRoleMenu(r.left, r.bottom, session); } });
+  // Orchestration: assign an agent role — only meaningful for AI sessions (not a
+  // plain shell, editor, etc.). Defer opening so this click doesn't immediately
+  // close the submenu via the global "click closes the context menu" handler.
+  const isAgent = session.kind === 'term' && session.ai && session.ai !== 'shell';
+  if (isAgent) {
+    items.push({ label: session.role ? `Role: ${session.role} (change…)` : 'Set role…', onClick: () => setTimeout(() => { const r = session.tabEl.getBoundingClientRect(); pickRoleMenu(r.left, r.bottom, session); }, 0) });
+  }
   const g = groupOf(session.id);
   if (g) {
     items.push({ label: `Show group "${g.name}"`, onClick: () => activateGroup(g.id) });
@@ -1916,7 +1926,6 @@ function closeSession(id) {
   if (s.ro) { try { s.ro.disconnect(); } catch {} }
   if (s.kind === 'term') { window.gits.ptyKill(id); if (s.term) s.term.dispose(); }
   if (s.kind === 'editor') window.gits.watchRemove(s.filePath);
-  if (s.kind === 'chat') { teamListEl = null; teamChatId = null; teamChannelsEl = null; teamMainEl = null; teamAdding = false; } // bg poller keeps the badge live
   s.pane.remove();
   s.tabEl.remove();
   sessions.delete(id);
@@ -2473,7 +2482,6 @@ async function openSearch(root) {
 // ---------------------------------------------------------------------------
 // A "channel" is one repo's chat (the "Gitsidian Team Chat" issue in that repo).
 // Config: { channels: [{repo, issue, visibility}], active: repo, seen: {repo: id} }.
-let chatSeq = 0;
 let teamMe = null;            // your GitHub login
 let teamChannels = [];        // [{ repo, issue, visibility }]
 let teamActive = null;        // active channel repo (owner/name)
@@ -2481,7 +2489,8 @@ let teamSeen = {};            // { repo: lastSeenId }
 let teamMsgs = [];            // active channel messages (deduped, oldest-first)
 let teamFetchedIds = new Set();
 let teamPollTimer = null;
-let teamChatId = null;        // chat tab session id
+let chatRailOpen = false;     // is the right-hand chat rail visible?
+let chatRailBuilt = false;    // has the rail DOM been constructed yet?
 let teamListEl = null;        // active channel's message list DOM
 let teamChannelsEl = null;    // channel list DOM
 let teamMainEl = null;        // conversation/setup area DOM
@@ -2748,7 +2757,7 @@ function markSeen() {
 function notifyChat(m) {
   try {
     const n = new Notification(`Gitsidian — ${m.login}`, { body: (m.body || '').slice(0, 140) });
-    n.onclick = () => { openTeamChat(); window.focus(); };
+    n.onclick = () => { openChatRail(); window.focus(); };
   } catch {}
 }
 
@@ -2767,18 +2776,13 @@ async function teamFetch({ initial = false } = {}) {
     for (const m of fresh) teamListEl.appendChild(chatMsgEl(m, teamMe));
     if (fresh.length) teamListEl.scrollTop = teamListEl.scrollHeight;
   }
-  const chatVisible = teamChatId && activeId === teamChatId && !document.hidden && !teamAdding;
+  const chatVisible = chatRailOpen && !document.hidden && !teamAdding;
   if (initial && teamSeen[teamActive] == null) { markSeen(); }      // first connect — don't flag all history
   else if (chatVisible) { markSeen(); }
   else {
     refreshChatBadge();
     const incoming = fresh.filter((m) => m.login !== teamMe);
     if (!initial && incoming.length) notifyChat(incoming[incoming.length - 1]);
-    // If the chat lives in a group and isn't the focused cell, light its chip.
-    const chatS = teamChatId && sessions.get(teamChatId);
-    if (chatS && incoming.length && !(activeId === teamChatId && activeGroupId)) {
-      chatS.unread = true; refreshGroupBadges();
-    }
   }
 }
 
@@ -3121,13 +3125,11 @@ async function startTeamBackground() {
   ensureTeamPolling();
 }
 
-async function openTeamChat() {
-  if (!teamChannels.length && !teamActive) await loadTeam();
-  if (!teamMe) { const who = await window.gits.teamWhoami(); teamMe = who.ok ? who.login : null; }
-  for (const [sid, s] of sessions) if (s.kind === 'chat') { activate(sid); return sid; }
-
-  const id = `c${++chatSeq}`;
-  teamChatId = id;
+// Build the chat rail DOM once, into the persistent #chat-rail aside.
+function buildChatRail() {
+  if (chatRailBuilt) return;
+  const rail = document.getElementById('chat-rail');
+  if (!rail) return;
   teamChannelsEl = el('div', { class: 'chat-channels' });
   teamMainEl = el('div', { class: 'chat-main' });
   const avatarBtn = el('button', { class: 'tiny-btn', title: 'Set your avatar for this team', text: 'Set avatar' });
@@ -3143,25 +3145,46 @@ async function openTeamChat() {
     rerenderMessages();
     showToast('Avatar updated.');
   });
-  const pane = el('div', { class: 'term-pane chat-pane', 'data-id': id },
-    el('div', { class: 'chat-head' },
-      el('span', { class: 'chat-title', text: 'Team chat' }),
-      el('div', { class: 'chat-head-right' }, el('span', { class: 'chat-sub', text: teamMe ? `you: ${teamMe}` : '' }), avatarBtn)),
-    el('div', { class: 'chat-body2' }, teamChannelsEl, teamMainEl));
-  terminalsEl.appendChild(pane);
+  const closeBtn = el('button', { class: 'chat-rail-close', title: 'Close chat panel', text: '×' });
+  closeBtn.addEventListener('click', () => closeChatRail());
+  rail.appendChild(el('div', { class: 'chat-head' },
+    el('span', { class: 'chat-title', text: 'Team chat' }),
+    el('div', { class: 'chat-head-right' }, el('span', { class: 'chat-sub', text: teamMe ? `you: ${teamMe}` : '' }), avatarBtn, closeBtn)));
+  rail.appendChild(el('div', { class: 'chat-body2' }, teamChannelsEl, teamMainEl));
+  chatRailBuilt = true;
+}
 
-  const session = { id, kind: 'chat', pane, focusEl: teamMainEl, label: 'Team chat', tabEl: null };
-  sessions.set(id, session);
-  attachTab(session, { tag: 'chat', tagClass: 'tab-ai chat', tabTitle: 'Team chat' });
-  welcomeEl.classList.add('hidden');
-  activate(id);
-
+async function openChatRail() {
+  if (!teamChannels.length && !teamActive) await loadTeam();
+  if (!teamMe) { const who = await window.gits.teamWhoami(); teamMe = who.ok ? who.login : null; }
+  buildChatRail();
+  // Refresh the "you:" line now that we know the login.
+  const sub = document.querySelector('#chat-rail .chat-sub');
+  if (sub) sub.textContent = teamMe ? `you: ${teamMe}` : '';
+  const rail = document.getElementById('chat-rail');
+  rail.classList.remove('hidden');
+  chatRailOpen = true;
+  const btn = document.getElementById('open-team');
+  if (btn) btn.classList.add('on');
   teamAdding = false;
   renderChannels();
   renderChatMain();
   if (teamActive) loadActiveChannel();
   ensureTeamPolling();
-  return id;
+  refitTerminals();
+}
+
+function closeChatRail() {
+  const rail = document.getElementById('chat-rail');
+  if (rail) rail.classList.add('hidden');
+  chatRailOpen = false;
+  const btn = document.getElementById('open-team');
+  if (btn) btn.classList.remove('on');
+  refitTerminals();
+}
+
+function toggleChatRail() {
+  if (chatRailOpen) closeChatRail(); else openChatRail();
 }
 
 // ---------------------------------------------------------------------------
@@ -3462,7 +3485,7 @@ function refreshGroupBadges() {
 // ---------------------------------------------------------------------------
 refreshBtn.addEventListener('click', () => loadProjects({ fetch: true }));
 document.getElementById('new-group').addEventListener('click', () => addGroup());
-document.getElementById('open-team').addEventListener('click', () => openTeamChat());
+document.getElementById('open-team').addEventListener('click', () => toggleChatRail());
 
 addFolderBtn.addEventListener('click', async () => {
   const res = await window.gits.addFolder();
@@ -4132,6 +4155,8 @@ document.getElementById('open-settings').addEventListener('click', () => {
   if (compactTabs) { compactTabs.checked = settings.hideTabLabels; compactTabs.onchange = () => { settings.hideTabLabels = compactTabs.checked; saveSettings(); applyTabLabels(); }; }
   const hideTags = document.getElementById('settings-hide-tags');
   if (hideTags) { hideTags.checked = settings.hideTabTags; hideTags.onchange = () => { settings.hideTabTags = hideTags.checked; saveSettings(); applyTabLabels(); }; }
+  const chatPanel = document.getElementById('settings-chat-panel');
+  if (chatPanel) { chatPanel.value = settings.chatPanel; chatPanel.onchange = () => { settings.chatPanel = chatPanel.value === 'overlay' ? 'overlay' : 'push'; saveSettings(); applyChatPanelMode(); }; }
   const sb = document.getElementById('settings-scrollback');
   sb.value = String(settings.scrollback);
   sb.onchange = () => { settings.scrollback = parseInt(sb.value, 10); saveSettings(); }; // applies to new terminals
@@ -4301,7 +4326,7 @@ function paletteActions() {
   const acts = [
     { label: 'New terminal here', run: () => openSession(paletteRoot || undefined, proj ? proj.name : 'terminal') },
     { label: 'Search in project…', run: () => openSearch(paletteRoot) },
-    { label: 'Team chat', run: () => openTeamChat() },
+    { label: 'Team chat', run: () => openChatRail() },
     { label: 'Settings…', run: () => document.getElementById('open-settings').click() },
     { label: `Switch to ${settings.theme === 'light' ? 'dark' : 'light'} theme`, run: () => { settings.theme = settings.theme === 'light' ? 'dark' : 'light'; saveSettings(); applyTheme(); } },
     { label: 'Check for updates', run: () => checkForUpdates({ silent: false }) },
