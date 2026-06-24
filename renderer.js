@@ -1532,7 +1532,7 @@ async function assignRole(s, role) {
   if (!s) return;
   if (!role) { setRole(s, null); return; }
   const root = sessionRoot(s);
-  let body = null;
+  let rel = null;
   if (root) {
     let r = await window.gits.roleGet({ root, name: role });
     if (r && r.ok && !r.exists && ROLE_PRESETS.includes(role)) {
@@ -1543,14 +1543,16 @@ async function assignRole(s, role) {
         else showToast((er && er.error) || 'Could not create role files.');
       }
     }
-    if (r && r.ok && r.exists) body = r.body;
+    if (r && r.ok && r.exists) rel = r.rel;
   }
   setRole(s, role);
-  if (body && s.composerInsert) {
-    s.composerInsert(`${body.trim()}\n`);
+  if (rel && s.composerInsert) {
+    // Point the agent at its own role file rather than pasting the whole prompt —
+    // the CLI reads the file itself (the file-handoff model).
+    s.composerInsert(`Please read and adopt your assigned role from ${rel}, and follow it for this session. If anything about your role or the task is unclear, ask clarifying questions before you start.\n`);
     activate(s.id);
     if (s.composerText) s.composerText.focus();
-    showToast(`Role "${role}" assigned — prompt staged in the composer; press Send to brief the agent.`);
+    showToast(`Role "${role}" assigned — directive staged in the composer; press Send to brief the agent.`);
   } else {
     showToast(`Role set: ${role}`);
   }

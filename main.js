@@ -936,33 +936,38 @@ ipcMain.handle('fs:create', (_e, { parent, name, isDir } = {}) => {
 // `<project>/.gitsidian/roles/`. Assigning a role injects its prompt into the
 // AI pane; the user can edit the files freely. (Global role library = later.)
 // ---------------------------------------------------------------------------
-const ROLE_DEFAULTS = [
-  { name: 'Coordinator', body: 'You are the Coordinator. Break the user\'s goal into clear tasks, delegate them to the other agents (Research, Writer, Reviewer, Tester, Planner), and integrate their results into a coherent whole. Track what is done and what remains, surface blockers early, and keep the plan and the shared context up to date. Be concise and decisive.' },
-  { name: 'Research', body: 'You are the Research agent. Investigate the question or task: read the relevant code, docs, and history, and gather the facts needed to act. Return concise, well-organised findings with concrete references (file paths, line numbers, links). Flag uncertainty rather than guessing. Do not implement changes — your output feeds the Planner and Writer.' },
-  { name: 'Writer', body: 'You are the Writer (implementer). Carry out the task based on the plan and research: write the code or content, follow the conventions already in the project, and keep changes focused and minimal. Explain non-obvious decisions briefly. When done, hand off to the Reviewer and Tester with a short summary of what changed and why.' },
-  { name: 'Reviewer', body: 'You are the Reviewer. Critically review the work for correctness, security, edge cases, and clarity. Assume there is a bug until you have checked. Be specific: cite the exact location and explain the risk and a concrete fix. Separate must-fix issues from nice-to-haves. Approve only when you are confident.' },
-  { name: 'Tester', body: 'You are the Tester. Design and run tests that actually exercise the change, including edge cases and failure modes. Report results plainly: what passed, what failed, and the exact steps to reproduce any failure. Prefer reproducible commands. Do not claim something works unless you have verified it.' },
-  { name: 'Planner', body: 'You are the Planner. Turn the goal into an ordered, dependency-aware plan: a short list of concrete steps, each with a clear owner role and a definition of done. Call out risks and unknowns up front. Keep it lightweight — enough structure to coordinate the other agents without over-engineering.' },
-];
 function roleSlug(name) {
   return String(name || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'role';
 }
+function roleTitle(slug) {
+  return String(slug || '').split('-').filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+}
 function rolesDir(root) { return path.join(expandHome(root), '.gitsidian', 'roles'); }
-function roleFileBody(name, body) {
-  // First line names the role; the rest is the prompt. Edit freely.
-  return `# Role: ${name}\n\n${body}\n`;
+// The prebuilt role package shipped inside the app (works in dev and packaged asar).
+function rolesTemplateDir() { return path.join(__dirname, 'templates', 'roles'); }
+function fillTemplate(text, { role, project }) {
+  return String(text).replace(/\{\{ROLE\}\}/g, role).replace(/\{\{PROJECT\}\}/g, project);
 }
 
-// Create the standard role files in a project (only writing ones that are missing).
+// Copy the prebuilt role .md package into a project's .gitsidian/roles/, filling
+// in {{ROLE}}/{{PROJECT}} placeholders. Only writes files that are missing, so a
+// user's edits are never clobbered.
 ipcMain.handle('roles:ensure', (_e, { root } = {}) => {
   try {
     if (!root) return { ok: false, error: 'No project.' };
     const dir = rolesDir(root);
     fs.mkdirSync(dir, { recursive: true });
+    const tdir = rolesTemplateDir();
+    if (!fs.existsSync(tdir)) return { ok: false, error: 'Role templates are missing from this build.' };
+    const project = path.basename(expandHome(root));
     const created = [];
-    for (const r of ROLE_DEFAULTS) {
-      const p = path.join(dir, roleSlug(r.name) + '.md');
-      if (!fs.existsSync(p)) { fs.writeFileSync(p, roleFileBody(r.name, r.body)); created.push(r.name); }
+    for (const f of fs.readdirSync(tdir)) {
+      if (!f.toLowerCase().endsWith('.md')) continue;
+      const dest = path.join(dir, f);
+      if (fs.existsSync(dest)) continue;
+      const role = roleTitle(f.replace(/\.md$/i, ''));
+      fs.writeFileSync(dest, fillTemplate(fs.readFileSync(path.join(tdir, f), 'utf8'), { role, project }));
+      created.push(role);
     }
     return { ok: true, dir, created };
   } catch (e) {
@@ -989,9 +994,11 @@ ipcMain.handle('roles:list', (_e, { root } = {}) => {
 ipcMain.handle('roles:get', (_e, { root, name } = {}) => {
   try {
     if (!root || !name) return { ok: false, exists: false, error: 'Missing project or role.' };
-    const p = path.join(rolesDir(root), roleSlug(name) + '.md');
-    if (!fs.existsSync(p)) return { ok: true, exists: false, path: p };
-    return { ok: true, exists: true, path: p, body: fs.readFileSync(p, 'utf8') };
+    const slug = roleSlug(name);
+    const p = path.join(rolesDir(root), slug + '.md');
+    const rel = path.join('.gitsidian', 'roles', slug + '.md');
+    if (!fs.existsSync(p)) return { ok: true, exists: false, path: p, slug, rel };
+    return { ok: true, exists: true, path: p, slug, rel, body: fs.readFileSync(p, 'utf8') };
   } catch (e) {
     return { ok: false, exists: false, error: e.message || 'Could not read the role.' };
   }
