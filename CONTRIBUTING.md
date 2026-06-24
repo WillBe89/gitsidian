@@ -1,8 +1,20 @@
-# Contributing to Gitsidian
+# Building & feedback
 
-Thanks for your interest! Gitsidian is a small, focused Electron app.
+Gitsidian is a **solo project** by [will.be](https://willbe.dev) — a small, focused
+Electron app. It's **not open to outside code contributions / pull requests**, and
+that's intentional: it keeps the codebase coherent and the licensing clean. But your
+input is genuinely welcome:
 
-## Getting set up
+- **Bug reports and feature ideas** → please open an [issue](https://github.com/WillBe89/gitsidian/issues). They're read and appreciated.
+- **Using it** → free for noncommercial use (see the [LICENSE](LICENSE)). Star/follow to get updates.
+- **Commercial use / licensing** → reach out via [willbe.dev](https://willbe.dev).
+
+> License note: Gitsidian is source-available under the **PolyForm Noncommercial
+> License 1.0.0** (versions 0.7.4 and earlier were MIT). You're welcome to read,
+> run, and modify it for noncommercial purposes; commercial use needs a separate
+> license.
+
+## Running from source
 
 ```sh
 git clone https://github.com/WillBe89/gitsidian.git
@@ -24,20 +36,15 @@ npm run rebuild
 - `renderer.js` — UI: sidebar, file tree, tabs, terminals, composer, dialogs.
 - `index.html` / `styles.css` — UI shell.
 
-## Conventions
+## Conventions (if you're hacking on your own copy)
 
 - Keep the security model intact: no `nodeIntegration`, no exposing raw `ipcRenderer`.
 - Cross-platform: branch on `process.platform` for anything shell- or path-specific (see how the PTY shell is chosen in `main.js`).
-- No build step — plain JS, loaded directly. Run `node --check` on changed files before committing.
-- Don't commit AI-assistant artifacts or secrets (see `.gitignore`).
+- No build step — plain JS, loaded directly. Run `node --check` on changed files.
 
 ## Building installers
 
 ```sh
 npm run dist       # installer for the current OS
 ```
-Pushing a `v*` tag triggers CI to build macOS + Windows and attach them to the release.
-
-## Pull requests
-
-Keep PRs focused and describe the user-facing change. Test on at least the platform you're on; note if a change is platform-specific.
+Pushing a `v*` tag triggers CI to build macOS, Windows, and Linux and attach them to the release.
