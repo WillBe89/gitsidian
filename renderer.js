@@ -48,6 +48,7 @@ let selectMode = false;     // picking tabs to form a group
 const selectedIds = new Set();
 const groupChipEls = new Map(); // groupId -> chip element
 let tabDragId = null;       // session id being drag-reordered in the strip
+let cellDragId = null;      // session id being dragged between quadrant cells
 const MAX_GROUP = 4;
 // Where each member sits in the grid, by member count then index (CSS grid-area).
 const GRID_AREAS = {
@@ -299,7 +300,8 @@ function loadSettings() {
     scrollback: typeof s.scrollback === 'number' ? s.scrollback : 5000,
     bold: !!s.bold,
     italic: !!s.italic,
-    hideTabLabels: !!s.hideTabLabels, // compact tabs (status dot + type tag only)
+    hideTabLabels: !!s.hideTabLabels, // hide the tab name (title)
+    hideTabTags: !!s.hideTabTags,     // hide the type tag (Terminal/Claude/…)
     defaultAi: s.defaultAi || null,
     autoUpdate: s.autoUpdate !== false, // opt-out; checks on launch by default
     restoreTabs: s.restoreTabs !== false, // opt-out; reopen tabs on relaunch
@@ -359,7 +361,8 @@ function applySidebarWidth() {
   document.documentElement.style.setProperty('--sidebar-w', settings.sidebarWidth + 'px');
 }
 function applyTabLabels() {
-  document.body.classList.toggle('tabs-compact', settings.hideTabLabels);
+  document.body.classList.toggle('tabs-no-name', settings.hideTabLabels);
+  document.body.classList.toggle('tabs-no-tag', settings.hideTabTags);
 }
 // Refit the visible terminal(s) — used after a resize drag.
 function refitTerminals() {
@@ -1559,18 +1562,47 @@ function updateTabActive() {
   for (const [gid, chip] of groupChipEls) chip.classList.toggle('active', gid === activeGroupId);
 }
 
-// Small overlay on each grid cell: label + close; click to focus the cell.
+// Small overlay on each grid cell: label + close; click to focus; drag to rearrange.
 function ensureCellTag(s) {
   if (s.cellTag) { s.cellTag.querySelector('.cell-tag-label').textContent = s.label; return; }
   const label = el('span', { class: 'cell-tag-label', text: s.label });
   const close = el('span', { class: 'cell-tag-close', text: '×', title: 'Close this tab' });
-  const tag = el('div', { class: 'cell-tag hidden' }, label, close);
+  const tag = el('div', { class: 'cell-tag hidden', draggable: 'true', title: 'Drag to another quadrant to swap' }, label, close);
   tag.addEventListener('mousedown', (e) => {
     if (e.target === close) { e.stopPropagation(); closeSession(s.id); return; }
     activate(s.id);
   });
+  tag.addEventListener('dragstart', (e) => {
+    cellDragId = s.id; e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', 'cell:' + s.id); } catch {}
+    s.pane.classList.add('cell-dragging');
+  });
+  tag.addEventListener('dragend', () => { cellDragId = null; s.pane.classList.remove('cell-dragging'); s.pane.classList.remove('cell-drop'); });
+  // The pane accepts another cell dropped on it → swap quadrant positions.
+  s.pane.addEventListener('dragover', (e) => {
+    if (!cellDragId || cellDragId === s.id || !activeGroupId) return;
+    e.preventDefault(); s.pane.classList.add('cell-drop');
+  });
+  s.pane.addEventListener('dragleave', (e) => { if (!s.pane.contains(e.relatedTarget)) s.pane.classList.remove('cell-drop'); });
+  s.pane.addEventListener('drop', (e) => {
+    if (!cellDragId || cellDragId === s.id || !activeGroupId) return;
+    e.preventDefault(); e.stopPropagation();
+    s.pane.classList.remove('cell-drop');
+    const dragged = cellDragId; cellDragId = null;
+    swapMembers(dragged, s.id);
+  });
   s.pane.appendChild(tag);
   s.cellTag = tag;
+}
+// Swap two members' positions within the active group (drag-arrange quadrants).
+function swapMembers(aId, bId) {
+  const g = activeGroupId ? groups.find((x) => x.id === activeGroupId) : null;
+  if (!g) return;
+  const ai = g.members.indexOf(aId), bi = g.members.indexOf(bId);
+  if (ai < 0 || bi < 0) return;
+  [g.members[ai], g.members[bi]] = [g.members[bi], g.members[ai]];
+  applyLayout();
+  persistSession();
 }
 
 // ---- Select mode: pick 2–4 tabs, then name them into a group ----
@@ -1727,20 +1759,16 @@ function renderGroupChips() {
     let chip = groupChipEls.get(g.id);
     if (!chip) {
       chip = el('div', { class: 'group-chip' },
-        el('span', { class: 'group-chip-caret', title: 'Show/hide this group’s tabs' }),
-        el('span', { class: 'group-chip-icon', html: GRID_SVG }),
+        el('span', { class: 'group-chip-icon', html: GRID_SVG, title: 'Show/hide this group’s tabs' }),
         el('span', { class: 'group-chip-name' }),
         el('span', { class: 'group-chip-count' }),
         el('span', { class: 'group-chip-dot' }),
         el('span', { class: 'tab-close group-chip-close', text: '×', title: 'Ungroup (keeps the tabs)' }));
       const toggleExpand = () => { g.expanded = !g.expanded; updateTabActive(); renderGroupChips(); };
       chip.addEventListener('click', (e) => {
-        if (e.target.classList.contains('group-chip-close')) { ungroup(g.id); return; }
-        if (e.target.classList.contains('group-chip-caret')) { e.stopPropagation(); toggleExpand(); return; }
-        // First click opens the group's grid; clicking the active group's chip
-        // again toggles its member tabs in the strip (collapse/expand).
-        if (activeGroupId === g.id) toggleExpand();
-        else activateGroup(g.id);
+        if (e.target.closest('.group-chip-close')) { ungroup(g.id); return; }
+        if (e.target.closest('.group-chip-icon')) { e.stopPropagation(); toggleExpand(); return; } // SVG = expand/collapse
+        activateGroup(g.id); // body = open the quadrant grid
       });
       chip.addEventListener('dblclick', (e) => { e.stopPropagation(); renameGroup(g.id); });
       // Drag a tab onto a group chip → add it to that group.
@@ -1765,7 +1793,7 @@ function renderGroupChips() {
     }
     chip.querySelector('.group-chip-name').textContent = g.name;
     chip.querySelector('.group-chip-count').textContent = String(n);
-    chip.querySelector('.group-chip-caret').textContent = g.expanded ? '▾' : '▸';
+    chip.querySelector('.group-chip-icon').title = g.expanded ? 'Hide this group’s tabs' : 'Show this group’s tabs';
     chip.classList.toggle('active', g.id === activeGroupId);
     chip.classList.toggle('expanded', !!g.expanded);
     // When expanded, line the member tabs up right after their chip.
@@ -3994,6 +4022,8 @@ document.getElementById('open-settings').addEventListener('click', () => {
   italic.onchange = () => { settings.italic = italic.checked; saveSettings(); applyFontStyle(); };
   const compactTabs = document.getElementById('settings-compact-tabs');
   if (compactTabs) { compactTabs.checked = settings.hideTabLabels; compactTabs.onchange = () => { settings.hideTabLabels = compactTabs.checked; saveSettings(); applyTabLabels(); }; }
+  const hideTags = document.getElementById('settings-hide-tags');
+  if (hideTags) { hideTags.checked = settings.hideTabTags; hideTags.onchange = () => { settings.hideTabTags = hideTags.checked; saveSettings(); applyTabLabels(); }; }
   const sb = document.getElementById('settings-scrollback');
   sb.value = String(settings.scrollback);
   sb.onchange = () => { settings.scrollback = parseInt(sb.value, 10); saveSettings(); }; // applies to new terminals
