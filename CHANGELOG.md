@@ -2,6 +2,22 @@
 
 All notable changes to Gitsidian.
 
+## 0.7.1 — 2026-06-24
+
+- **Quadrant tab groups** — select **2–4 open tabs** and group them into a grid
+  (side-by-side, or 2×2 quadrants) with a name. Switch between a group and single
+  tabs from the strip, and keep **multiple groups** at once — the 24-tab cap still
+  applies (e.g. up to six groups of four, or twelve pairs). Any tab can be a cell:
+  terminals, editors, diffs, or a **chat** — so you can set up a cockpit of 2–3 AI
+  sessions plus a terminal and watch them all at once.
+  - **Shift-click** a tab to quick-group it with the current one (or add it to the
+    active group); **right-click** a tab or the group chip for grouping actions.
+  - Each cell has a label + close; click a cell to focus it. Removing a group's
+    second-to-last tab dissolves the group back to normal tabs.
+  - *(Replaces the old two-pane split, which is now just "a group of two.")*
+- **Fix:** on composer resize, the terminal's black viewport could bleed over the
+  top of the message bar — now clipped to its pane.
+
 ## 0.7.0 — 2026-06-24
 
 Gitsidian grows into a calm home for your repos, terminals, notes, and team — it

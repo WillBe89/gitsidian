@@ -19,17 +19,15 @@ Next, make that seamless and broader.
   picking up from another terminal is a single click.
 - **Reopen-at-folder polish** — remember the last command per folder.
 
-### Multi-pane workspace — up to 4 quadrants
-Today's split shows any two tabs side by side. Power users want more: a **grid of
-up to four panes** (2×2 quadrants) in one window — e.g. two or three AI sessions
-plus a terminal or editor — so you can set up a cockpit and glance across all of it
-at once, switching focus without tab-hopping.
+### Quadrant groups — polish (shipped in 0.7.1)
+The 2×2 quadrant grouping landed in 0.7.1. Still to refine:
 
-- **2×2 quadrant layout** (plus 1×3 / 2×1 presets), each cell any tab type
-  (terminal, AI, editor, chat, diff).
-- **Drag a tab into a quadrant**; resizable dividers between cells; layout persists.
-- Keyboard focus-switching between panes; "maximise this pane" toggle.
-- Builds directly on the existing split engine.
+- **Resizable dividers** between cells (cells are equal-split for now).
+- **Drag a tab directly into a quadrant** (today: select / shift-click / menu).
+- **Persist groups across relaunch** and add keyboard focus-switching + a
+  "maximise this cell" toggle.
+- **Multiple live chats** — a chat can be a cell today, but only one chat session
+  exists; allow several at once.
 
 ### Advanced team chat
 Make chat feel like a real chat app, not just issue comments.
@@ -60,6 +58,10 @@ Make chat feel like a real chat app, not just issue comments.
   (`.rpm`, system tray icon).
 
 ## Shipped recently
+
+**0.7.1:** **quadrant tab groups** — group 2–4 tabs into a side-by-side / 2×2 grid,
+multiple groups at once (24-tab cap still applies), any tab type per cell including
+chat; shift-click / select-to-group / right-click actions · composer-bar bleed fix.
 
 **0.7.0:** opens your **Markdown files** (set Gitsidian as the default `.md` app) ·
 **open a terminal anywhere** (drag a folder / Terminal proxy icon, `gits` command,

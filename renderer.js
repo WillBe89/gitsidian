@@ -38,16 +38,34 @@ let ais = [];
 const newTermBtn = el('button', { class: 'new-tab', title: 'New terminal (shell, in your home folder)', text: '+' });
 newTermBtn.addEventListener('click', () => openSession(undefined, 'terminal', 'shell'));
 
-// Split view: show a second terminal alongside the active one.
-let splitId = null;
-const splitBtn = el('button', { class: 'new-tab split-toggle', title: 'Split view with another tab (terminal, editor, AI, diff…)', text: '⊟' });
-splitBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleSplit(); });
+// --- Tab grouping / quadrant layout --------------------------------------
+// A "group" arranges 2–4 open tabs in a grid (side-by-side or 2×2 quadrants).
+// Tabs still count toward the 24-tab cap; grouping just lays them out together.
+let groups = [];            // [{ id, name, members: [sessionId, …] }]  (2–4 members)
+let activeGroupId = null;   // when set, the terminals area shows this group's grid
+let paneGroupSeq = 0;
+let selectMode = false;     // picking tabs to form a group
+const selectedIds = new Set();
+const groupChipEls = new Map(); // groupId -> chip element
+const MAX_GROUP = 4;
+// Where each member sits in the grid, by member count then index (CSS grid-area).
+const GRID_AREAS = {
+  2: ['1 / 1 / 2 / 2', '1 / 2 / 2 / 3'],
+  3: ['1 / 1 / 2 / 2', '1 / 2 / 2 / 3', '2 / 1 / 3 / 3'],
+  4: ['1 / 1 / 2 / 2', '1 / 2 / 2 / 3', '2 / 1 / 3 / 2', '2 / 2 / 3 / 3'],
+};
+const GRID_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>';
 
-// Keep the persistent "+" and split controls at the end of the tab strip.
+const groupBtn = el('button', { class: 'new-tab group-toggle', title: 'Group 2–4 tabs into a quadrant view', html: GRID_SVG });
+groupBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleSelectMode(); });
+
+// Keep the persistent "+" and group controls at the end of the tab strip.
 function appendTabControls() {
   tabbar.appendChild(newTermBtn);
-  tabbar.appendChild(splitBtn);
+  tabbar.appendChild(groupBtn);
 }
+
+const groupOf = (id) => groups.find((g) => g.members.includes(id)) || null;
 
 // Lightweight non-blocking toast for occasional notices (e.g. session cap).
 let toastTimer = null;
@@ -324,8 +342,9 @@ function applySidebarWidth() {
 }
 // Refit the visible terminal(s) — used after a resize drag.
 function refitTerminals() {
-  refreshPane(sessions.get(activeId));
-  if (splitId) refreshPane(sessions.get(splitId));
+  const g = activeGroupId ? groups.find((x) => x.id === activeGroupId) : null;
+  if (g) for (const id of g.members) refreshPane(sessions.get(id));
+  else refreshPane(sessions.get(activeId));
 }
 applyAccent();
 applyTheme();
@@ -1330,26 +1349,19 @@ function attachTab(session, { tag, tagClass = 'tab-ai', tabTitle = '' } = {}) {
   );
   tab.addEventListener('click', (e) => {
     if (e.target.classList.contains('tab-close')) { closeSession(session.id); return; }
-    // Shift+click a different tab → show it beside the active one (split view).
-    if (e.shiftKey && activeId && activeId !== session.id) { splitWith(session.id); return; }
+    if (selectMode) { toggleSelected(session.id); return; }
+    // Shift+click another tab → quickly group the two (or add to the active group).
+    if (e.shiftKey && activeId && activeId !== session.id) { quickGroup(session.id); return; }
     activate(session.id);
   });
-  // Right-click a tab → split options.
+  // Right-click a tab → grouping options.
   tab.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const items = [];
-    if (splitId && (session.id === splitId || session.id === activeId)) {
-      items.push({ label: 'Close split view', onClick: () => { splitId = null; applySplitClasses(); } });
-    }
-    if (activeId && activeId !== session.id) {
-      items.push({ label: `Split: show beside "${(sessions.get(activeId) || {}).label || 'current tab'}"`, onClick: () => splitWith(session.id) });
-    }
-    if (!items.length) items.push({ label: 'Open another tab to split with', onClick: () => {} });
-    showContextMenu(e.clientX, e.clientY, items);
+    showContextMenu(e.clientX, e.clientY, tabMenuItems(session));
   });
   const titleEl = tab.querySelector('.tab-title');
-  titleEl.title = 'Double-click to rename · Shift-click another tab to split';
+  titleEl.title = 'Double-click to rename · Shift-click another tab to group';
   titleEl.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename(titleEl, session); });
   session.tabEl = tab;
   tabbar.appendChild(tab);
@@ -1362,31 +1374,43 @@ function shortAi(name) {
 }
 
 function activate(id) {
-  // In split view, clicking the secondary's tab swaps it to the primary side.
-  if (splitId && id === splitId) splitId = activeId;
+  if (!sessions.has(id)) return;
   activeId = id;
-  for (const [sid, s] of sessions) {
-    const on = sid === id;
-    s.pane.classList.toggle('active', on);
-    s.tabEl.classList.toggle('active', on);
-    if (on) { s.unread = false; s.tabEl.classList.remove('unread'); }
-  }
-  applySplitClasses();
+  const g = groupOf(id);
+  activeGroupId = g ? g.id : null;
+  applyLayout();
   const s = sessions.get(id);
   if (s) {
+    s.unread = false; if (s.tabEl) s.tabEl.classList.remove('unread');
     if (s.kind === 'chat' && !teamAdding) markSeen(); // clear the unread badge when you look at chat
-    if (s.cm) { requestAnimationFrame(() => { s.cm.refresh(); s.cm.focus(); }); }
-    else if (s.composerText) s.composerText.focus();
-    else if (s.focusEl) s.focusEl.focus();
+    focusSession(s);
   }
 }
 
-// Toggle split with the most-recently-used other terminal.
-// Short kind label for the split picker (terminal/editor/diff/review/etc.).
+// Show a whole group's grid; focus its first live member.
+function activateGroup(gid) {
+  const g = groups.find((x) => x.id === gid);
+  if (!g) return;
+  g.members = g.members.filter((id) => sessions.has(id));
+  if (g.members.length < 2) { dissolveGroup(g); return; }
+  activeId = g.members.includes(activeId) ? activeId : g.members[0];
+  activeGroupId = gid;
+  applyLayout();
+  focusSession(sessions.get(activeId));
+}
+
+function focusSession(s) {
+  if (!s) return;
+  if (s.cm) { requestAnimationFrame(() => { try { s.cm.refresh(); s.cm.focus(); } catch {} }); }
+  else if (s.composerText) s.composerText.focus();
+  else if (s.focusEl) s.focusEl.focus();
+}
+
 function paneKindLabel(s) {
+  if (!s) return '';
   if (s.kind === 'term') return 'terminal';
   if (s.kind === 'editor') return 'editor';
-  return s.kind; // diff · review · history · search · chat · image
+  return s.kind;
 }
 // Refit/refresh a pane after a layout change, by kind.
 function refreshPane(s) {
@@ -1395,39 +1419,237 @@ function refreshPane(s) {
   else if (s.cm) requestAnimationFrame(() => { try { s.cm.refresh(); } catch {} }); // editor (CodeMirror)
 }
 
-// Put `id` beside the active tab (active on the left, `id` on the right).
-function splitWith(id) {
-  if (!id || id === activeId || !sessions.has(id)) return;
-  splitId = id;
-  applySplitClasses();
-}
+// THE layout authority: show either a single active pane, or the active group's
+// 2–4 panes in a grid. Keeps tab/chip active+hidden states in sync.
+function applyLayout() {
+  const group = activeGroupId ? groups.find((g) => g.id === activeGroupId) : null;
+  const members = group ? group.members.filter((id) => sessions.has(id)) : [];
+  if (group && members.length < 2) { dissolveGroup(group); return; }
 
-// Split the active tab with ANY other open tab (terminal, editor, AI, diff, …).
-function toggleSplit() {
-  if (splitId) { splitId = null; applySplitClasses(); return; }
-  const others = [...sessions.values()].filter((s) => s.id !== activeId);
-  if (!others.length) { showToast('Open another tab to split the view.'); return; }
-  const r = splitBtn.getBoundingClientRect();
-  showContextMenu(Math.max(8, r.left - 120), r.bottom + 4, others.map((s) => ({
-    label: `${s.label}  ·  ${paneKindLabel(s)}`,
-    onClick: () => { splitId = s.id; applySplitClasses(); },
-  })));
-}
-
-// Apply/clear the side-by-side layout and refresh both panes (any kind).
-function applySplitClasses() {
-  for (const s of sessions.values()) s.pane.classList.remove('split-2');
-  const valid = splitId && sessions.has(splitId) && splitId !== activeId;
-  if (!valid) { splitId = null; terminalsEl.classList.remove('split'); }
-  else {
-    terminalsEl.classList.add('split');
-    terminalsEl.style.setProperty('--split', settings.splitRatio + '%');
-    const sec = sessions.get(splitId);
-    sec.pane.classList.add('split-2');
-    refreshPane(sec);
+  for (const s of sessions.values()) {
+    s.pane.classList.remove('active', 'grid-cell', 'focused');
+    s.pane.style.gridArea = '';
+    if (s.cellTag) s.cellTag.classList.add('hidden');
   }
-  splitBtn.classList.toggle('on', !!splitId);
-  refreshPane(sessions.get(activeId));
+  terminalsEl.classList.remove('grouped');
+  terminalsEl.removeAttribute('data-count');
+  terminalsEl.style.gridTemplateColumns = '';
+  terminalsEl.style.gridTemplateRows = '';
+
+  if (group) {
+    terminalsEl.classList.add('grouped');
+    const n = members.length;
+    terminalsEl.dataset.count = String(n);
+    terminalsEl.style.gridTemplateColumns = '1fr 1fr';
+    terminalsEl.style.gridTemplateRows = n <= 2 ? '1fr' : '1fr 1fr';
+    members.forEach((id, i) => {
+      const s = sessions.get(id);
+      s.pane.classList.add('grid-cell');
+      s.pane.style.gridArea = GRID_AREAS[n][i];
+      ensureCellTag(s);
+      s.cellTag.classList.remove('hidden');
+      if (id === activeId) s.pane.classList.add('focused');
+      refreshPane(s);
+    });
+  } else {
+    const s = sessions.get(activeId);
+    if (s) { s.pane.classList.add('active'); refreshPane(s); }
+  }
+  updateTabActive();
+  renderGroupChips();
+}
+
+function updateTabActive() {
+  for (const [sid, s] of sessions) {
+    if (!s.tabEl) continue;
+    s.tabEl.classList.toggle('hidden', !!groupOf(sid)); // grouped tabs live inside the chip
+    s.tabEl.classList.toggle('active', !activeGroupId && sid === activeId);
+  }
+  for (const [gid, chip] of groupChipEls) chip.classList.toggle('active', gid === activeGroupId);
+}
+
+// Small overlay on each grid cell: label + close; click to focus the cell.
+function ensureCellTag(s) {
+  if (s.cellTag) { s.cellTag.querySelector('.cell-tag-label').textContent = s.label; return; }
+  const label = el('span', { class: 'cell-tag-label', text: s.label });
+  const close = el('span', { class: 'cell-tag-close', text: '×', title: 'Close this tab' });
+  const tag = el('div', { class: 'cell-tag hidden' }, label, close);
+  tag.addEventListener('mousedown', (e) => {
+    if (e.target === close) { e.stopPropagation(); closeSession(s.id); return; }
+    activate(s.id);
+  });
+  s.pane.appendChild(tag);
+  s.cellTag = tag;
+}
+
+// ---- Select mode: pick 2–4 tabs, then name them into a group ----
+function toggleSelectMode() {
+  if (selectMode) { exitSelectMode(); return; }
+  if ([...sessions.values()].filter((s) => !groupOf(s.id)).length < 2) {
+    showToast('Open at least two ungrouped tabs to make a group.'); return;
+  }
+  selectMode = true;
+  selectedIds.clear();
+  if (activeId && !groupOf(activeId)) selectedIds.add(activeId);
+  tabbar.classList.add('selecting');
+  groupBtn.classList.add('on');
+  showSelectBar();
+  refreshSelectionUI();
+}
+function exitSelectMode() {
+  selectMode = false;
+  selectedIds.clear();
+  tabbar.classList.remove('selecting');
+  groupBtn.classList.remove('on');
+  for (const s of sessions.values()) s.tabEl && s.tabEl.classList.remove('selected');
+  hideSelectBar();
+}
+function toggleSelected(id) {
+  if (groupOf(id)) { showToast('That tab is already in a group.'); return; }
+  if (selectedIds.has(id)) selectedIds.delete(id);
+  else if (selectedIds.size >= MAX_GROUP) { showToast(`A group holds up to ${MAX_GROUP} tabs.`); return; }
+  else selectedIds.add(id);
+  refreshSelectionUI();
+}
+function refreshSelectionUI() {
+  for (const [sid, s] of sessions) s.tabEl && s.tabEl.classList.toggle('selected', selectedIds.has(sid));
+  const bar = document.getElementById('select-bar');
+  if (!bar) return;
+  const n = selectedIds.size;
+  bar.querySelector('.select-count').textContent = `${n} selected`;
+  const mk = bar.querySelector('.select-make');
+  mk.disabled = n < 2 || n > MAX_GROUP;
+  mk.textContent = n >= 2 && n <= MAX_GROUP ? `Group these ${n}` : 'Pick 2–4 tabs';
+}
+function showSelectBar() {
+  if (document.getElementById('select-bar')) return;
+  const make = el('button', { class: 'select-make block-btn primary', text: 'Pick 2–4 tabs', disabled: 'true' });
+  const cancel = el('button', { class: 'select-cancel block-btn', text: 'Cancel' });
+  make.addEventListener('click', confirmGroup);
+  cancel.addEventListener('click', exitSelectMode);
+  const bar = el('div', { id: 'select-bar', class: 'select-bar' },
+    el('span', { class: 'select-hint', text: 'Click tabs to add · ' }),
+    el('span', { class: 'select-count', text: '0 selected' }), cancel, make);
+  document.body.appendChild(bar);
+}
+function hideSelectBar() { const b = document.getElementById('select-bar'); if (b) b.remove(); }
+async function confirmGroup() {
+  const ids = [...selectedIds].filter((id) => sessions.has(id) && !groupOf(id));
+  if (ids.length < 2 || ids.length > MAX_GROUP) return;
+  const name = await uiPrompt('Name this group:', `Group ${groups.length + 1}`, 'e.g. Cockpit');
+  if (name === null) return;
+  createGroup(ids, name.trim() || `Group ${groups.length + 1}`);
+  exitSelectMode();
+}
+function createGroup(ids, name) {
+  const g = { id: `tg${++paneGroupSeq}`, name, members: ids.slice(0, MAX_GROUP) };
+  groups.push(g);
+  activeGroupId = g.id;
+  activeId = g.members[0];
+  applyLayout();
+  focusSession(sessions.get(activeId));
+  persistSession();
+}
+// Shift-click path: pair two tabs, or add a tab to the active group.
+function quickGroup(id) {
+  if (!sessions.has(id) || id === activeId) return;
+  const tg = groupOf(id);
+  if (tg) { activateGroup(tg.id); return; }
+  const ag = groupOf(activeId);
+  if (ag) {
+    if (ag.members.length >= MAX_GROUP) { showToast(`A group holds up to ${MAX_GROUP} tabs.`); return; }
+    ag.members.push(id); activateGroup(ag.id);
+  } else {
+    createGroup([activeId, id], `Group ${groups.length + 1}`);
+  }
+}
+function dissolveGroup(g) {
+  const survivor = g.members.filter((id) => sessions.has(id))[0] || null;
+  groups = groups.filter((x) => x.id !== g.id);
+  const chip = groupChipEls.get(g.id); if (chip) { chip.remove(); groupChipEls.delete(g.id); }
+  if (activeGroupId === g.id) {
+    activeGroupId = null;
+    if (survivor) activate(survivor);
+    else { const next = [...sessions.keys()].pop(); if (next) activate(next); else { activeId = null; welcomeEl.classList.remove('hidden'); applyLayout(); } }
+  } else applyLayout();
+  persistSession();
+}
+function ungroup(gid) {
+  const g = groups.find((x) => x.id === gid); if (!g) return;
+  const first = g.members.filter((id) => sessions.has(id))[0];
+  groups = groups.filter((x) => x.id !== gid);
+  const chip = groupChipEls.get(gid); if (chip) { chip.remove(); groupChipEls.delete(gid); }
+  if (activeGroupId === gid) activeGroupId = null;
+  if (first) activate(first); else applyLayout();
+  persistSession();
+}
+function removeFromGroup(id) {
+  const g = groupOf(id); if (!g) return;
+  g.members = g.members.filter((m) => m !== id);
+  if (g.members.filter((m) => sessions.has(m)).length < 2) dissolveGroup(g);
+  else { if (activeGroupId === g.id && activeId === id) activeId = g.members[0]; applyLayout(); }
+  persistSession();
+}
+async function renameGroup(gid) {
+  const g = groups.find((x) => x.id === gid); if (!g) return;
+  const name = await uiPrompt('Rename group:', g.name);
+  if (name === null) return;
+  g.name = name.trim() || g.name;
+  renderGroupChips(); persistSession();
+}
+// Group chips at the start of the tab strip.
+function renderGroupChips() {
+  for (const [gid, chip] of [...groupChipEls]) {
+    if (!groups.find((g) => g.id === gid)) { chip.remove(); groupChipEls.delete(gid); }
+  }
+  for (const g of groups) {
+    const n = g.members.filter((id) => sessions.has(id)).length;
+    let chip = groupChipEls.get(g.id);
+    if (!chip) {
+      chip = el('div', { class: 'group-chip' },
+        el('span', { class: 'group-chip-icon', html: GRID_SVG }),
+        el('span', { class: 'group-chip-name' }),
+        el('span', { class: 'group-chip-count' }),
+        el('span', { class: 'tab-close group-chip-close', text: '×', title: 'Ungroup (keeps the tabs)' }));
+      chip.addEventListener('click', (e) => {
+        if (e.target.classList.contains('group-chip-close')) { ungroup(g.id); return; }
+        activateGroup(g.id);
+      });
+      chip.addEventListener('dblclick', (e) => { e.stopPropagation(); renameGroup(g.id); });
+      chip.addEventListener('contextmenu', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        showContextMenu(e.clientX, e.clientY, [
+          { label: 'Rename group…', onClick: () => renameGroup(g.id) },
+          { label: 'Ungroup (keep tabs)', onClick: () => ungroup(g.id) },
+        ]);
+      });
+      groupChipEls.set(g.id, chip);
+      tabbar.insertBefore(chip, tabbar.firstChild);
+    }
+    chip.querySelector('.group-chip-name').textContent = g.name;
+    chip.querySelector('.group-chip-count').textContent = String(n);
+    chip.classList.toggle('active', g.id === activeGroupId);
+  }
+}
+// Right-click menu for an individual tab (grouping actions).
+function tabMenuItems(session) {
+  const items = [];
+  const g = groupOf(session.id);
+  if (g) {
+    items.push({ label: `Show group "${g.name}"`, onClick: () => activateGroup(g.id) });
+    items.push({ label: 'Remove from group', onClick: () => removeFromGroup(session.id) });
+    items.push({ label: 'Rename group…', onClick: () => renameGroup(g.id) });
+    return items;
+  }
+  const ag = groupOf(activeId);
+  if (activeId && activeId !== session.id && ag && ag.members.length < MAX_GROUP) {
+    items.push({ label: `Add to group "${ag.name}"`, onClick: () => { ag.members.push(session.id); activateGroup(ag.id); persistSession(); } });
+  }
+  if (activeId && activeId !== session.id && !ag) {
+    items.push({ label: `Group with "${(sessions.get(activeId) || {}).label || 'current tab'}"`, onClick: () => createGroup([activeId, session.id], `Group ${groups.length + 1}`) });
+  }
+  items.push({ label: 'Group tabs…', onClick: () => toggleSelectMode() });
+  return items;
 }
 
 function fitAndResize(s) {
@@ -1452,11 +1674,23 @@ function closeSession(id) {
   s.pane.remove();
   s.tabEl.remove();
   sessions.delete(id);
-  if (id === splitId) { splitId = null; terminalsEl.classList.remove('split'); }
-  if (activeId === id) {
-    const next = [...sessions.keys()].pop();
+  // If it was in a group, drop it; a group below 2 members dissolves.
+  const g = groupOf(id);
+  if (g) {
+    g.members = g.members.filter((m) => m !== id);
+    if (g.members.filter((m) => sessions.has(m)).length < 2) {
+      groups = groups.filter((x) => x.id !== g.id);
+      const chip = groupChipEls.get(g.id); if (chip) { chip.remove(); groupChipEls.delete(g.id); }
+      if (activeGroupId === g.id) activeGroupId = null;
+    }
+  }
+  if (activeId === id || (activeGroupId && !groups.find((x) => x.id === activeGroupId))) {
+    if (activeGroupId) activeGroupId = null;
+    const next = (g && g.members.filter((m) => sessions.has(m))[0]) || [...sessions.keys()].pop();
     if (next) activate(next);
-    else { activeId = null; welcomeEl.classList.remove('hidden'); }
+    else { activeId = null; welcomeEl.classList.remove('hidden'); applyLayout(); }
+  } else {
+    applyLayout();
   }
   persistSession();
 }
@@ -2893,19 +3127,7 @@ sidebarResizer.addEventListener('mousedown', (e) => {
   });
 });
 
-// Divider between the two split panes.
-const splitDivider = el('div', { class: 'split-divider', title: 'Drag to resize the split' });
-terminalsEl.appendChild(splitDivider);
-splitDivider.addEventListener('mousedown', (e) => {
-  e.preventDefault();
-  const rect = terminalsEl.getBoundingClientRect();
-  startDrag(splitDivider, (ev) => {
-    const pct = Math.max(20, Math.min(80, ((ev.clientX - rect.left) / rect.width) * 100));
-    settings.splitRatio = Math.round(pct);
-    terminalsEl.style.setProperty('--split', pct + '%');
-    refitTerminals();
-  });
-});
+// (Group/quadrant layout replaced the single draggable split divider in 0.7.1.)
 
 // ---------------------------------------------------------------------------
 // Sidebar buttons + modal

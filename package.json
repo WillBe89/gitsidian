@@ -1,6 +1,6 @@
 {
   "name": "gitsidian",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "productName": "Gitsidian",
   "description": "A calm home for your repos, terminals, notes, and team — embedded terminals, a code editor, one-click Git, a Markdown reader you can set as default, AI CLIs, and built-in team chat.",
