@@ -427,7 +427,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   display: flex; align-items: center; justify-content: center;
   font-weight: 700; font-size: 14px; pointer-events: none; z-index: 5;
 }
-.term-host { flex: 1; min-height: 0; width: 100%; padding: 8px 10px 4px; }
+.term-host { flex: 1; min-height: 0; width: 100%; padding: 8px 10px 4px; overflow: hidden; }
 .term-host.term-italic .xterm-rows, .term-host.term-italic .xterm-rows span { font-style: italic; }
 
 /* Friendly composer bar -------------------------------------------------- */
@@ -436,6 +436,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   border-top: 1px solid var(--line);
   background: var(--panel);
   padding: 0 10px 10px;
+  position: relative; z-index: 1; /* sit above the terminal so nothing bleeds over the bar */
 }
 /* Drag-to-resize grip above a message box (terminal + chat composers). */
 .composer-resize { flex: 0 0 auto; height: 9px; cursor: row-resize; display: flex; align-items: center; justify-content: center; }
