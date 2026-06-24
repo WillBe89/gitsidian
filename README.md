@@ -4,9 +4,9 @@
 
 # Gitsidian
 
-### Your AI coding cockpit — edit code, run any AI, handle git, and chat with your team, all in one window.
+### A calm home for your repos, terminals, notes, and team — all in one window.
 
-**No terminal required.** Open any git repo or Obsidian vault; edit files with real syntax highlighting; run Claude Code, Codex, Ollama, or a shell — several at once, each a live tab. Then review, stage, commit, push, open PRs, and message your team — without leaving the app or memorising a single command.
+Open any git repo or Obsidian vault and get **embedded terminals**, a real **code editor**, a **Markdown reader** you can set as your default app, **one-click Git**, your favourite **AI CLIs**, and built-in **team chat** — without app-switching, terminal sprawl, or memorising commands. Make it the app you open a terminal *anywhere* with, and the one that opens your `.md` files.
 
 [![Download for macOS](https://img.shields.io/badge/Download-macOS-black?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
 [![Download for Windows](https://img.shields.io/badge/Download-Windows-0078D6?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
@@ -20,29 +20,28 @@
 
 ## Highlights
 
-- **Edit code in-app** — a CodeMirror editor with syntax highlighting (~16 languages), find/replace, go-to-line, and Markdown/image preview. A "VSCode-lite" for the quick AI jobs.
-- **Run any AI CLI** — Claude Code, Codex, Gemini, Ollama, Aider and more — auto-detected, several at once, each a real terminal in its own tab with a live status light.
+- **Everything in one window** — embedded terminals, a code editor, a Markdown reader, Git, AI CLIs, and team chat, organised into a friendly sidebar of your projects. No more bouncing between a terminal, an editor, a Markdown app, a Git GUI, and a chat app.
+- **A terminal you can make your default** — real terminals (`node-pty` + `xterm.js`) in tabs, with live status lights. **Open a terminal anywhere:** drag a folder (or a Terminal window's title-bar icon) onto Gitsidian, run `gits` in any folder, or use the `gitsidian://` URL scheme.
+- **Your Markdown reader & light editor** — a clean Markdown preview good enough to set as your **default `.md` app**, plus a CodeMirror editor with syntax highlighting (~16 languages), find/replace, and go-to-line. Open files straight from Finder.
 - **Git without the terminal** — publish, commit, push, pull, **review & stage** (per-file *or* per-hunk), commit history, branch switching, and **open a PR** — all from the sidebar, with safety guard-rails.
-- **Work as a team** — built-in **chat** that uses your GitHub account as your identity (no extra accounts or servers), plus opt-in **AI command dispatch**: propose a prompt a teammate approves and runs in their own session.
-- **Make it yours** — dark/light themes, a resizable **split view of any two tabs**, command palette (⌘P), multi-file search, drag-and-drop, paste-an-image, and built-in auto-update.
+- **Run any AI CLI** — Claude Code, Codex, Gemini, Ollama, Aider and more — auto-detected, several at once, each a real terminal in its own tab.
+- **Work as a team** — built-in **chat** that uses your GitHub account as identity (no extra accounts or servers), with a Slack-style composer, custom names/avatars, message & channel management, plus opt-in **AI command dispatch**.
+- **Make it yours** — seven themes plus **fully custom accent + background colours**, a resizable **split view of any two tabs**, command palette (⌘P), multi-file search, full **file management** in the tree, drag-and-drop, paste-an-image, and built-in auto-update.
 
-> **New in 0.6:** a real code editor, review-and-stage with per-hunk commits, team chat, and AI command dispatch.
+> **New in 0.7:** opens your Markdown files, becomes the app you open a terminal *anywhere* with, full file management in the tree, a polished chat composer with message/channel management, and a theme picker with custom colours.
 
 ## Why Gitsidian exists
 
-AI coding assistants (Claude Code, Codex, Ollama and friends) are incredible — but they live in the **terminal**, which is a wall for most people and a juggling act even for developers:
+Working on a project means living in a handful of apps at once — a terminal, a code editor, a Markdown reader for your notes, a Git client, and a chat app for your team. Each is its own window, its own learning curve, its own context switch. And the AI coding assistants everyone now relies on (Claude Code, Codex, Ollama and friends) live in the **terminal** — powerful, but a wall for most people and a juggling act even for developers.
 
-- A blank black window with commands to memorise.
-- Running several assistants across different repos means a mess of terminal windows, and no way to tell which one is still thinking.
-- Git itself — clone, commit, push, pull — is another set of commands on top.
-
-Gitsidian keeps the terminal's power and aesthetic (each session really *is* a terminal), but wraps it so **anyone can use it**: a sidebar of your projects, real embedded terminals in tabs, one-click git, and clear status everywhere. It was built so a non-technical teammate can drive an AI assistant in the right folder as easily as a developer can run ten of them at once.
+Gitsidian brings it all into **one calm window**: a sidebar of your projects, real embedded terminals in tabs, a built-in editor and Markdown reader, one-click Git, your AI CLIs, and team chat — with clear status everywhere. It keeps the terminal's power and aesthetic (each session really *is* a terminal) but wraps everything so a non-technical teammate can work in the right folder as easily as a developer can run ten sessions at once.
 
 ## Who it's for
 
-- **Developers** who want to run multiple AI coding sessions side by side, across repos, without terminal sprawl.
-- **Non-technical people** (marketing, ops, writers) who need to use an AI assistant on a shared repo or knowledge base but shouldn't have to learn the terminal or git.
-- **Obsidian users** whose vaults are git repos — edit notes locally, and pull/push to share with a team, all from one place.
+- **Developers** juggling repos, terminals, editors, and several AI sessions who want them in one place — no window sprawl.
+- **Obsidian & notes users** whose vaults are git repos — read and edit your Markdown locally (Gitsidian can be your default `.md` app), and pull/push to share.
+- **Teams** who want chat, Git, and AI dispatch alongside the code, using their GitHub accounts — no new service to sign up for.
+- **Anyone** who wants a friendlier terminal they can open anywhere and a clean Markdown reader, without learning a pile of commands.
 
 ## Screenshots
 
@@ -57,7 +56,8 @@ Several AI sessions running side by side, each in its own tab:
 ## Features
 
 - **Find repos automatically** — one click scans your computer for git repos and Obsidian vaults and lets you pick which to load. No digging through your file manager.
-- **Projects + file tree** — browse any project's files and launch an assistant in any sub-folder. **Manage files right in the tree:** create, rename, and delete (to the Trash) via right-click.
+- **Projects + full file management** — browse any project's files and launch an assistant in any sub-folder. **Manage files right in the tree:** create, rename, delete (to the Trash), plus **Copy, Cut, Paste, Duplicate, and "Move to…"** via right-click, and drag-to-move between folders. No Finder required.
+- **Open from your OS** — set Gitsidian as your **default Markdown app** (Settings → Files) so `.md` files open straight into the rendered reader. **Open a terminal anywhere:** drag a folder (or a Terminal window's title-bar icon, which carries its working directory) onto Gitsidian to get a terminal there, or wire up the one-line **`gits`** shell command / `gitsidian://terminal?cwd=…` URL scheme. *(It opens a fresh shell in that folder — it can't adopt or close another app's live session.)*
 - **Built-in code editor** — click a file to open it in a tab with **syntax highlighting** (CodeMirror, ~16 languages), line numbers, find/replace (⌘F), and go-to-line (Alt+G). Save with ⌘S/Ctrl+S. **Markdown files** get a Preview toggle and **images** open in a preview pane. A "VSCode-lite" for the quick AI jobs — no external editor needed.
 - **Command palette (⌘P)** — fuzzy-open any file in the active project and run quick actions from the keyboard. **Multi-file search** with Shift+⌘F jumps to matches.
 - **Embedded multi-tab terminals** — real terminals (`node-pty` + `xterm.js`) *inside* the app. Rename tabs, watch their status lights, open as many as you need (up to a safe cap), and **split two side by side**.
@@ -79,8 +79,8 @@ Several AI sessions running side by side, each in its own tab:
 - **Safety guard-rails** — pushing to a **public** repo needs a deliberate confirmation; **read-only** repos block the push (but you can still pull); your private repos stay one-click easy.
 - **GitHub account switcher** — a chip in the title bar shows your active account; switch between accounts (e.g. personal vs work) or add one, without the terminal.
 - **Slack-style organisation** — drag projects into groups, reorder and rename them, remove what you don't want. Your layout persists across restarts.
-- **Make it yours** — Dark/Light theme, accent colour, terminal font size/weight, scrollback. Paste a screenshot into the composer and it's saved into the project with the path inserted for you.
-- **Team chat, built on GitHub** — message your team from inside Gitsidian using your GitHub account as your identity (login + avatar). A **channel = one private repo** (its chat issue); switch channels, invite by username **or email** (GitHub prompts non-members to sign up), with markdown, @mentions, and a public-repo warning. No server, no extra accounts.
+- **Make it yours** — a **sectioned Settings panel** (Appearance / Sessions / Files / Team / Updates) with a **theme picker** — seven backgrounds (Midnight, Ink, Muted, Grape, Nord, Day, and a warm Claude scheme) plus **fully custom accent + background colours** via hex pickers; terminals and the editor follow. Also: terminal font size/weight, scrollback, and paste-a-screenshot (saved into the project with the path inserted for you).
+- **Team chat, built on GitHub** — message your team from inside Gitsidian using your GitHub account as your identity. A **channel = one repo** (its chat issue); switch channels, invite by username **or email** (GitHub prompts non-members to sign up), with markdown, @mentions, and a public-repo warning. A **Slack-style composer** (bold/italic/strikethrough/code/lists/quote/link + emoji), a **display-name alias** and **custom avatar**, **copy** any message, **delete** messages, and **delete a channel** (with a `.md` transcript backup). No server, no extra accounts.
 - **Command dispatch (opt-in)** — propose an AI prompt for a teammate to run in a specific repo; they get an Approve card and it's *staged* in that repo's session for them to review and send. Guard-railed: off by default, AI-prompts-only, local approval + a final human send, risky-pattern warnings, and it only runs in a repo they actually have cloned.
 - **Auto-reload** — when a file you have open changes on disk (e.g. an AI agent edits it), the editor reloads it — keeping your unsaved edits if you have any.
 - **Session persistence** — your open terminal and editor tabs reopen when you relaunch.
@@ -168,11 +168,11 @@ Or just push a `v*` tag — CI builds **macOS, Windows, and Linux** and attaches
 
 ## Roadmap
 
-See **[ROADMAP.md](ROADMAP.md)** for what's planned. Near-term: multi-file search
-refinements, more editor languages and format-on-save, conflict help for pulls, and
-real-time team collaboration. The biggest one is full **code signing & notarization**
-(the build is wired for it; it just needs a paid Apple Developer ID) to remove the
-first-launch security prompt — see **Support**.
+See **[ROADMAP.md](ROADMAP.md)** for what's planned. Near-term: multi-select for
+bulk file operations, more editor languages and format-on-save, conflict help for
+pulls, and real-time team chat. The biggest one is full **code signing &
+notarization** (the build is wired for it; it just needs a paid Apple Developer ID)
+to remove the first-launch security prompt — see **Support**.
 
 ## Support
 

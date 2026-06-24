@@ -91,9 +91,55 @@ const TERM_THEME_LIGHT = {
   cyan: '#1b7c83', brightCyan: '#3192aa',
   white: '#6e7781', brightWhite: '#1b1f27',
 };
-function termTheme() { return settings.theme === 'light' ? TERM_THEME_LIGHT : TERM_THEME; }
+// Theme registry. Each theme sets surface/text CSS vars (in styles.css); `base`
+// (dark/light) drives the terminal + editor syntax themes. Accent is separate.
+const THEMES = {
+  midnight: { label: 'Midnight', base: 'dark', bg: '#0d0f14' },
+  ink: { label: 'Ink', base: 'dark', bg: '#000000' },
+  muted: { label: 'Muted', base: 'dark', bg: '#1a1c20' },
+  grape: { label: 'Grape', base: 'dark', bg: '#16121f' },
+  nord: { label: 'Nord', base: 'dark', bg: '#2e3440' },
+  day: { label: 'Day', base: 'light', bg: '#f6f7f9' },
+  claude: { label: 'Claude', base: 'light', bg: '#f4efe7' },
+};
+// Colour helpers — for the fully-custom theme/accent (hex pickers).
+function hexToRgb(h) { h = (h || '').replace('#', ''); if (h.length === 3) h = h.split('').map((c) => c + c).join(''); const n = parseInt(h || '0', 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function clampByte(n) { return Math.max(0, Math.min(255, Math.round(n))); }
+function rgbToHex(r, g, b) { return '#' + [r, g, b].map((x) => clampByte(x).toString(16).padStart(2, '0')).join(''); }
+function mix(hex, target, amt) { const a = hexToRgb(hex), b = hexToRgb(target); return rgbToHex(a[0] + (b[0] - a[0]) * amt, a[1] + (b[1] - a[1]) * amt, a[2] + (b[2] - a[2]) * amt); }
+function luminance(hex) { const [r, g, b] = hexToRgb(hex).map((v) => v / 255); return 0.2126 * r + 0.7152 * g + 0.0722 * b; }
+function isHex(h) { return /^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/.test((h || '').trim()); }
+function normHex(h) { h = (h || '').trim(); if (!h.startsWith('#')) h = '#' + h; if (h.length === 4) h = '#' + h.slice(1).split('').map((c) => c + c).join(''); return h.toLowerCase(); }
+// Derive a coherent surface palette from a single background colour.
+function customPalette(bg) {
+  const dark = luminance(bg) <= 0.5;
+  if (dark) return {
+    '--bg': bg, '--panel': mix(bg, '#ffffff', 0.05), '--panel-2': mix(bg, '#ffffff', 0.09),
+    '--panel-3': mix(bg, '#ffffff', 0.14), '--line': mix(bg, '#ffffff', 0.20),
+    '--text': '#e9ebef', '--muted': mix('#e9ebef', bg, 0.45), '--term-bg': mix(bg, '#000000', 0.25),
+  };
+  return {
+    '--bg': bg, '--panel': mix(bg, '#ffffff', 0.55), '--panel-2': mix(bg, '#000000', 0.04),
+    '--panel-3': mix(bg, '#000000', 0.09), '--line': mix(bg, '#000000', 0.16),
+    '--text': '#1b1f27', '--muted': mix('#1b1f27', bg, 0.45), '--term-bg': mix(bg, '#ffffff', 0.5),
+  };
+}
+const CUSTOM_VARS = ['--bg', '--panel', '--panel-2', '--panel-3', '--line', '--text', '--muted', '--term-bg'];
+
+function themeBase() {
+  if (settings.theme === 'custom' && settings.bgHex) return luminance(settings.bgHex) > 0.5 ? 'light' : 'dark';
+  return (THEMES[settings.theme] || THEMES.midnight).base;
+}
+function termTheme() {
+  const base = themeBase() === 'light' ? TERM_THEME_LIGHT : TERM_THEME;
+  if (settings.theme === 'custom' && settings.bgHex) {
+    const pal = customPalette(settings.bgHex);
+    return Object.assign({}, base, { background: pal['--term-bg'], foreground: pal['--text'] });
+  }
+  return base;
+}
 const IS_MAC = window.gits.platform === 'darwin';
-function cmTheme() { return settings.theme === 'light' ? 'eclipse' : 'material-darker'; }
+function cmTheme() { return themeBase() === 'light' ? 'eclipse' : 'material-darker'; }
 
 // ---------------------------------------------------------------------------
 // Tiny DOM helper
@@ -170,6 +216,31 @@ function uiPrompt(message, defaultValue = '', placeholder = '') {
   });
 }
 
+// In-app confirm. opts: { okLabel, danger, extraLabel } — when extraLabel is set
+// a third button resolves to 'extra' (used here for "Download backup").
+// Resolves true (confirmed), false (cancelled), or 'extra'.
+function uiConfirm(message, opts = {}) {
+  return new Promise((resolve) => {
+    const okBtn = el('button', { class: `block-btn ${opts.danger ? 'danger' : 'primary'}`, text: opts.okLabel || 'OK' });
+    const cancelBtn = el('button', { class: 'block-btn', text: 'Cancel' });
+    const actions = [cancelBtn];
+    let extraBtn = null;
+    if (opts.extraLabel) { extraBtn = el('button', { class: 'block-btn', text: opts.extraLabel }); actions.push(extraBtn); }
+    actions.push(okBtn);
+    const overlay = el('div', { class: 'modal prompt-modal' },
+      el('div', { class: 'modal-card' },
+        el('p', { class: 'prompt-msg', html: message }),
+        el('div', { class: 'modal-actions' }, ...actions)));
+    document.body.appendChild(overlay);
+    const done = (val) => { overlay.remove(); resolve(val); };
+    okBtn.addEventListener('click', () => done(true));
+    cancelBtn.addEventListener('click', () => done(false));
+    if (extraBtn) extraBtn.addEventListener('click', () => done('extra'));
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) done(false); });
+    setTimeout(() => okBtn.focus(), 0);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Settings (personalization) — persisted in localStorage, applied live
 // ---------------------------------------------------------------------------
@@ -186,7 +257,9 @@ function loadSettings() {
   let s = {};
   try { s = JSON.parse(localStorage.getItem('gits-settings') || '{}'); } catch {}
   return {
-    accent: ACCENTS[s.accent] ? s.accent : 'crimson',
+    accent: (s.accent === 'custom' || ACCENTS[s.accent]) ? s.accent : 'crimson',
+    accentHex: isHex(s.accentHex) ? normHex(s.accentHex) : '#c0264b',
+    bgHex: isHex(s.bgHex) ? normHex(s.bgHex) : '#0d0f14',
     fontSize: typeof s.fontSize === 'number' ? s.fontSize : 12.5,
     scrollback: typeof s.scrollback === 'number' ? s.scrollback : 5000,
     bold: !!s.bold,
@@ -196,7 +269,7 @@ function loadSettings() {
     restoreTabs: s.restoreTabs !== false, // opt-out; reopen tabs on relaunch
     allowChatCommands: !!s.allowChatCommands, // opt-IN; off by default (safety)
     composerHeight: typeof s.composerHeight === 'number' ? Math.max(40, Math.min(480, s.composerHeight)) : 0, // 0 = auto
-    theme: s.theme === 'light' ? 'light' : 'dark',
+    theme: (s.theme === 'custom' || THEMES[s.theme]) ? s.theme : (s.theme === 'light' ? 'day' : 'midnight'), // migrate old dark/light
     sidebarWidth: typeof s.sidebarWidth === 'number' ? Math.max(200, Math.min(520, s.sidebarWidth)) : 280,
     splitRatio: typeof s.splitRatio === 'number' ? Math.max(20, Math.min(80, s.splitRatio)) : 50,
   };
@@ -204,7 +277,9 @@ function loadSettings() {
 let settings = loadSettings();
 function saveSettings() { localStorage.setItem('gits-settings', JSON.stringify(settings)); }
 function applyAccent() {
-  const [a, b] = ACCENTS[settings.accent] || ACCENTS.crimson;
+  let a, b;
+  if (settings.accent === 'custom' && isHex(settings.accentHex)) { a = settings.accentHex; b = mix(settings.accentHex, '#ffffff', 0.18); }
+  else { [a, b] = ACCENTS[settings.accent] || ACCENTS.crimson; }
   document.documentElement.style.setProperty('--accent', a);
   document.documentElement.style.setProperty('--accent-2', b);
 }
@@ -229,11 +304,19 @@ function applyFontStyle() {
   }
 }
 function applyTheme() {
-  document.documentElement.setAttribute('data-theme', settings.theme === 'light' ? 'light' : 'dark');
-  const t = termTheme();
+  const root = document.documentElement;
+  if (settings.theme === 'custom' && settings.bgHex) {
+    root.setAttribute('data-theme', 'custom');
+    const pal = customPalette(settings.bgHex);
+    for (const [k, v] of Object.entries(pal)) root.style.setProperty(k, v);
+  } else {
+    for (const k of CUSTOM_VARS) root.style.removeProperty(k); // drop any prior custom overrides
+    root.setAttribute('data-theme', THEMES[settings.theme] ? settings.theme : 'midnight');
+  }
+  const t = termTheme(), cm = cmTheme();
   for (const s of sessions.values()) {
     if (s.term) { try { s.term.options.theme = t; } catch {} }
-    if (s.cm) { try { s.cm.setOption('theme', cmTheme()); } catch {} }
+    if (s.cm) { try { s.cm.setOption('theme', cm); } catch {} }
   }
 }
 function applySidebarWidth() {
@@ -404,15 +487,29 @@ let groupSeq = 0;
 let draggedPath = null;
 let draggedGroupId = null;
 let treeDrag = null; // { path, el } while dragging a file/folder within the tree
+let treeClipboard = null; // { path, cut } for Copy/Cut → Paste
+
+const dirOf = (p) => p.replace(/\/+$/, '').replace(/\/[^/]+$/, '');
+// Reload the tree container that holds the row for `p` (used after move/cut).
+async function refreshTreePath(p) {
+  const row = document.querySelector(`.tree-row[data-path="${(window.CSS ? CSS.escape(p) : p)}"]`);
+  if (!row) return;
+  const container = row.closest('.tree-children') || row.closest('.tree');
+  if (container) await refreshContainer(container);
+}
 
 // Always clear drag-highlight marks when a drag ends (or drops anywhere) — fixes
-// stuck red borders when a drag is cancelled or dropped on a child element.
+// stuck red borders when a drag is cancelled, dropped on a child, or leaves the
+// window (incl. external file drags from Finder, which fire no in-app dragend).
+const DRAG_MARKS = ['drag-over', 'drop-before', 'group-drop', 'group-drop-after', 'dragging', 'group-dragging', 'drop', 'tree-drop'];
 function clearDragMarks() {
-  document.querySelectorAll('.drag-over, .drop-before, .group-drop, .group-drop-after, .dragging, .group-dragging')
-    .forEach((e) => e.classList.remove('drag-over', 'drop-before', 'group-drop', 'group-drop-after', 'dragging', 'group-dragging'));
+  document.querySelectorAll('.' + DRAG_MARKS.join(', .'))
+    .forEach((e) => e.classList.remove(...DRAG_MARKS));
 }
 document.addEventListener('dragend', clearDragMarks);
 document.addEventListener('drop', clearDragMarks);
+// When the drag pointer leaves the window entirely, relatedTarget is null.
+window.addEventListener('dragleave', (e) => { if (!e.relatedTarget) clearDragMarks(); });
 
 function saveLayout() { window.gits.setLayout(layout); }
 
@@ -501,7 +598,7 @@ function moveGroup(id, beforeId) {
 // A container that accepts a dropped project at its end.
 function makeDropZone(elm, groupId) {
   elm.addEventListener('dragover', (e) => { e.preventDefault(); elm.classList.add('drag-over'); });
-  elm.addEventListener('dragleave', (e) => { if (e.target === elm) elm.classList.remove('drag-over'); });
+  elm.addEventListener('dragleave', (e) => { if (!elm.contains(e.relatedTarget)) elm.classList.remove('drag-over'); });
   elm.addEventListener('drop', (e) => {
     e.preventDefault();
     elm.classList.remove('drag-over');
@@ -542,7 +639,7 @@ function projectCard(p) {
   header.addEventListener('dragend', () => { wrap.classList.remove('dragging'); });
   // Drop onto a card inserts the dragged project before it (same list).
   wrap.addEventListener('dragover', (e) => { e.preventDefault(); if (draggedPath && draggedPath !== p.path) wrap.classList.add('drop-before'); });
-  wrap.addEventListener('dragleave', (e) => { if (e.target === wrap) wrap.classList.remove('drop-before'); });
+  wrap.addEventListener('dragleave', (e) => { if (!wrap.contains(e.relatedTarget)) wrap.classList.remove('drop-before'); });
   wrap.addEventListener('drop', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -576,6 +673,36 @@ function projectCard(p) {
     await refreshContainer(treeRoot);
     const sc = srcEl.closest('.tree-children');
     if (sc) await refreshContainer(sc);
+  });
+  // Right-click empty tree space → new file/folder at the project root, or paste.
+  treeRoot.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('.tree-row')) return; // a row handles its own menu
+    e.preventDefault(); e.stopPropagation();
+    const items = [
+      { label: 'New file…', onClick: async () => {
+        const name = await uiPrompt(`New file in "${p.name}":`, ''); if (!name) return;
+        const r = await window.gits.createEntry({ parent: p.path, name, isDir: false });
+        if (!r.ok) { showToast(r.error || 'Could not create.'); return; }
+        await refreshContainer(treeRoot); openEditor(r.path);
+      } },
+      { label: 'New folder…', onClick: async () => {
+        const name = await uiPrompt(`New folder in "${p.name}":`, ''); if (!name) return;
+        const r = await window.gits.createEntry({ parent: p.path, name, isDir: true });
+        if (!r.ok) { showToast(r.error || 'Could not create.'); return; }
+        await refreshContainer(treeRoot);
+      } },
+    ];
+    if (treeClipboard) {
+      const clip = treeClipboard;
+      items.push({ label: `Paste${clip.cut ? ' (move)' : ''} into "${p.name}"`, onClick: async () => {
+        const r = await window.gits.pasteEntry({ src: clip.path, destDir: p.path, cut: clip.cut });
+        if (!r.ok) { showToast(r.error || 'Could not paste.'); return; }
+        const srcPath = clip.path; if (clip.cut) treeClipboard = null;
+        await refreshContainer(treeRoot);
+        if (clip.cut) await refreshTreePath(srcPath);
+      } });
+    }
+    showContextMenu(e.clientX, e.clientY, items);
   });
 
   header.addEventListener('click', async () => {
@@ -778,6 +905,35 @@ function treeContextMenu(row, entry, depth) {
       await refreshContainer(parentContainer);
     } });
 
+    // Clipboard / file-management ops.
+    items.push({ label: 'Copy', onClick: () => { treeClipboard = { path: entry.path, cut: false }; showToast(`Copied "${entry.name}"`); } });
+    items.push({ label: 'Cut', onClick: () => { treeClipboard = { path: entry.path, cut: true }; showToast(`Cut "${entry.name}"`); } });
+    items.push({ label: 'Duplicate', onClick: async () => {
+      const r = await window.gits.pasteEntry({ src: entry.path, destDir: dirOf(entry.path), cut: false });
+      if (!r.ok) { showToast(r.error || 'Could not duplicate.'); return; }
+      await refreshContainer(parentContainer);
+    } });
+    if (entry.isDir && treeClipboard) {
+      const clip = treeClipboard;
+      items.push({ label: `Paste${clip.cut ? ' (move)' : ''} into "${entry.name}"`, onClick: async () => {
+        const r = await window.gits.pasteEntry({ src: clip.path, destDir: entry.path, cut: clip.cut });
+        if (!r.ok) { showToast(r.error || 'Could not paste.'); return; }
+        const srcPath = clip.path;
+        if (clip.cut) treeClipboard = null;
+        row.parentElement.classList.add('open');
+        await refreshContainer(row.nextElementSibling); // dest folder's children
+        if (clip.cut) await refreshTreePath(srcPath);   // source removed
+      } });
+    }
+    items.push({ label: 'Move to…', onClick: async () => {
+      const dest = await window.gits.pickFolder(`Move "${entry.name}" to…`);
+      if (!dest) return;
+      const r = await window.gits.pasteEntry({ src: entry.path, destDir: dest, cut: true });
+      if (!r.ok) { showToast(r.error || 'Could not move.'); return; }
+      await refreshContainer(parentContainer);
+      showToast(`Moved "${entry.name}"`);
+    } });
+
     if (root) items.push({
       label: 'Add to .gitignore',
       onClick: async () => {
@@ -826,7 +982,7 @@ function treeNode(entry, depth, changes) {
   const cc = changeClass(entry.path, entry.isDir, changes);
   if (entry.isDir) {
     const item = el('div', { class: 'tree-item' });
-    const row = el('div', { class: `tree-row dir${cc}`, style: `padding-left:${pad}px`, title: entry.path },
+    const row = el('div', { class: `tree-row dir${cc}`, style: `padding-left:${pad}px`, title: entry.path, 'data-path': entry.path },
       el('span', { class: 'twisty', text: '▶' }),
       el('span', { class: 'tree-name', text: entry.name }),
       runHereButton(entry.path, entry.name)
@@ -844,7 +1000,7 @@ function treeNode(entry, depth, changes) {
   }
 
   // File row — left-click opens in the built-in editor; changed files get a diff button.
-  const row = el('div', { class: `tree-row file${cc}`, style: `padding-left:${pad + 16}px`, title: entry.path },
+  const row = el('div', { class: `tree-row file${cc}`, style: `padding-left:${pad + 16}px`, title: entry.path, 'data-path': entry.path },
     el('span', { class: 'file-icon', text: '·' }),
     el('span', { class: 'tree-name', text: entry.name })
   );
@@ -894,6 +1050,31 @@ function composerGrow(ta) {
   const fixed = settings.composerHeight || 0;
   const h = fixed ? Math.max(fixed, Math.min(ta.scrollHeight, hardMax)) : Math.min(ta.scrollHeight, 120);
   ta.style.height = h + 'px';
+}
+// On newline inside a list, continue it: repeat the bullet, or increment the
+// number. An empty item ends the list instead. Returns true if it handled the key.
+function maybeContinueList(ta) {
+  if (ta.selectionStart !== ta.selectionEnd) return false;
+  const pos = ta.selectionStart;
+  const lineStart = ta.value.lastIndexOf('\n', pos - 1) + 1;
+  const line = ta.value.slice(lineStart, pos);
+  const mBullet = line.match(/^(\s*)([-*+])\s+(.*)$/);
+  const mNum = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+  const m = mBullet || mNum;
+  if (!m) return false;
+  if (!m[3].trim()) { // empty item — exit the list
+    ta.value = ta.value.slice(0, lineStart) + ta.value.slice(pos);
+    ta.setSelectionRange(lineStart, lineStart);
+    ta.dispatchEvent(new Event('input'));
+    return true;
+  }
+  const prefix = mBullet ? `${m[1]}${m[2]} ` : `${m[1]}${parseInt(m[2], 10) + 1}. `;
+  const ins = '\n' + prefix;
+  ta.value = ta.value.slice(0, pos) + ins + ta.value.slice(pos);
+  const np = pos + ins.length;
+  ta.setSelectionRange(np, np);
+  ta.dispatchEvent(new Event('input'));
+  return true;
 }
 // A drag-to-resize grip for a message box (shared by terminal + chat composers).
 function makeComposerResizer(ta, grow) {
@@ -1099,22 +1280,20 @@ async function openSession(cwd, label, aiOverride) {
   const pane = el('div', { class: 'term-pane', 'data-id': id }, host, composer.el);
   terminalsEl.appendChild(pane);
 
-  // Drag a file/folder onto this session to drop its path into the composer.
-  pane.addEventListener('dragover', (e) => { e.preventDefault(); pane.classList.add('drop'); });
-  pane.addEventListener('dragleave', (e) => { if (e.target === pane) pane.classList.remove('drop'); });
+  // Drop a folder here to open a terminal there; drop a file to insert its path.
+  pane.addEventListener('dragover', (e) => { if (isExternalDrag(e)) { e.preventDefault(); pane.classList.add('drop'); } });
+  pane.addEventListener('dragleave', (e) => { if (!pane.contains(e.relatedTarget)) pane.classList.remove('drop'); });
   pane.addEventListener('drop', (e) => {
+    if (!isExternalDrag(e)) return;
     e.preventDefault();
+    e.stopPropagation(); // we handle it here; don't also fire the document handler
     pane.classList.remove('drop');
-    const paths = [...(e.dataTransfer.files || [])]
-      .map((f) => window.gits.pathForFile(f))
-      .filter(Boolean)
-      .map((p) => (/\s/.test(p) ? `"${p}"` : p));
-    if (paths.length) composer.insert(paths.join(' ') + ' ');
+    handleExternalDrop(e, session);
   });
 
   const session = {
     id, kind: 'term', term, fit, host, pane, cwd, ai, aiName, label,
-    composerText: composer.textarea,
+    composerText: composer.textarea, composerInsert: composer.insert,
     status: 'busy', unread: false, tabEl: null,
   };
   sessions.set(id, session);
@@ -1337,6 +1516,7 @@ function renderMarkdown(src) {
   const inline = (t) => t
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<span class="md-img">[image: $1]</span>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
     .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
@@ -1355,7 +1535,14 @@ function renderMarkdown(src) {
     if (h) { closeList(); html += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; i++; continue; }
     if (/^\s*[-*+]\s+/.test(line)) { if (list !== 'ul') { closeList(); html += '<ul>'; list = 'ul'; } html += `<li>${inline(line.replace(/^\s*[-*+]\s+/, ''))}</li>`; i++; continue; }
     if (/^\s*\d+\.\s+/.test(line)) { if (list !== 'ol') { closeList(); html += '<ol>'; list = 'ol'; } html += `<li>${inline(line.replace(/^\s*\d+\.\s+/, ''))}</li>`; i++; continue; }
-    if (/^\s*>\s?/.test(line)) { closeList(); html += `<blockquote>${inline(line.replace(/^\s*>\s?/, ''))}</blockquote>`; i++; continue; }
+    // Blockquote — note the source is already HTML-escaped, so '>' is '&gt;'.
+    if (/^\s*&gt;\s?/.test(line)) {
+      closeList();
+      const q = [];
+      while (i < lines.length && /^\s*&gt;\s?/.test(lines[i])) { q.push(inline(lines[i].replace(/^\s*&gt;\s?/, ''))); i++; }
+      html += `<blockquote>${q.join('<br>')}</blockquote>`;
+      continue;
+    }
     if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { closeList(); html += '<hr/>'; i++; continue; }
     if (!line.trim()) { closeList(); i++; continue; }
     closeList(); html += `<p>${inline(line)}</p>`; i++;
@@ -1391,7 +1578,7 @@ async function openImagePreview(filePath) {
 // find/replace (⌘F), go-to-line (Alt+G).
 // ---------------------------------------------------------------------------
 let editorSeq = 0;
-async function openEditor(filePath) {
+async function openEditor(filePath, opts = {}) {
   // Already open? Just focus that tab.
   for (const [sid, s] of sessions) {
     if (s.kind === 'editor' && s.filePath === filePath) { activate(sid); return sid; }
@@ -1471,6 +1658,7 @@ async function openEditor(filePath) {
       prevBtn.textContent = previewing ? 'Edit' : 'Preview';
       if (!previewing) requestAnimationFrame(() => cm.refresh());
     });
+    if (opts.preview) prevBtn.click(); // open straight into the rendered view
   }
 
   attachTab(session, { tag: 'edit', tagClass: 'tab-ai edit', tabTitle: filePath });
@@ -1817,6 +2005,7 @@ let teamListEl = null;        // active channel's message list DOM
 let teamChannelsEl = null;    // channel list DOM
 let teamMainEl = null;        // conversation/setup area DOM
 let teamAdding = false;       // showing the add-channel form?
+let teamProfiles = {};        // { login: { alias, avatar } } from the hub's members.json
 
 function relTime(iso) {
   const t = new Date(iso).getTime();
@@ -1948,10 +2137,14 @@ function chatCommandCard(m, me, cmd) {
   const mine = m.login === me;
   const risk = riskyReason(cmd.prompt);
   const card = el('div', { class: `cmd-card${risk ? ' risky' : ''}` });
+  const copyBtn = el('button', { class: 'chat-copy cmd-copy', title: 'Copy prompt', html: COPY_SVG, type: 'button' });
+  copyBtn.addEventListener('click', (e) => { e.stopPropagation(); copyToClipboard(cmd.prompt || '', 'Prompt'); });
+  const delBtn = el('button', { class: 'chat-del cmd-copy', title: 'Delete message', html: TRASH_SVG, type: 'button' });
   card.appendChild(el('div', { class: 'cmd-head' },
     el('span', { class: 'cmd-zap', html: ZAP_SVG }),
     el('span', { class: 'cmd-who', text: mine ? 'You proposed a command' : `${m.login} proposes a command` }),
-    el('span', { class: 'chat-time', text: relTime(m.at) })));
+    el('span', { class: 'chat-time', text: relTime(m.at) }),
+    copyBtn, delBtn));
   card.appendChild(el('div', { class: 'cmd-target', text: `Run in ${cmd.repo} · ${cmd.ai}` }));
   card.appendChild(el('pre', { class: 'cmd-prompt', text: cmd.prompt }));
   if (risk) card.appendChild(el('div', { class: 'cmd-risk', text: `⚠ Looks risky: ${risk}. Review carefully.` }));
@@ -1965,23 +2158,70 @@ function chatCommandCard(m, me, cmd) {
   });
   dismiss.addEventListener('click', () => card.remove());
   card.appendChild(el('div', { class: 'cmd-actions' }, dismiss, approve));
-  return el('div', { class: `chat-msg${mine ? ' me' : ''}` }, el('div', { class: 'chat-bubble cmd-bubble' }, card));
+  const row = el('div', { class: `chat-msg${mine ? ' me' : ''}` }, el('div', { class: 'chat-bubble cmd-bubble' }, card));
+  delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteMessage(m, row); });
+  return row;
 }
 
 // Clean filled lightning bolt (Feather "zap" shape) — used for AI command dispatch.
 const ZAP_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
+const COPY_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const SMILE_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
+const TRASH_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+
+// Copy text to the clipboard with a confirmation toast.
+function copyToClipboard(text, label) {
+  window.gits.copyText(text || '');
+  showToast(`${label || 'Copied'} to clipboard`);
+}
+
+// Delete a single chat message (with confirm). Removes it from the view on success.
+async function deleteMessage(m, rowEl) {
+  const ch = activeChannel();
+  if (!ch || !m || !m.id) return;
+  const ok = await uiConfirm('Delete this message? This removes it from GitHub for everyone.', { okLabel: 'Delete', danger: true });
+  if (!ok) return;
+  const r = await window.gits.chatDelete({ repo: ch.repo, id: m.id });
+  if (!r.ok) { showToast(r.error || 'Could not delete the message.'); return; }
+  teamMsgs = teamMsgs.filter((x) => x.id !== m.id);
+  if (teamFetchedIds) teamFetchedIds.delete(m.id);
+  if (rowEl) rowEl.remove(); else rerenderMessages();
+  showToast('Message deleted');
+}
+
+// Build a Markdown transcript of a channel for the backup download.
+function buildChatMarkdown(ch, msgs) {
+  const lines = [`# Gitsidian chat — ${ch.repo}`, '', `_Exported ${new Date().toLocaleString()} · ${msgs.length} message(s)._`, ''];
+  for (const m of msgs) {
+    const prof = teamProfiles[m.login] || {};
+    const who = prof.alias ? `${prof.alias} (@${m.login})` : m.login;
+    lines.push(`### ${who} · ${new Date(m.at).toLocaleString()}`, '', (m.body || '').trim(), '');
+  }
+  return lines.join('\n');
+}
 
 function chatMsgEl(m, me) {
   const cmd = parseCommand(m.body);
   if (cmd) return chatCommandCard(m, me, cmd);
-  const av = el('img', { class: 'chat-avatar', src: m.avatar || '', alt: m.login, referrerpolicy: 'no-referrer' });
+  // Overlay the team profile (custom avatar / display name) when one is set.
+  const prof = teamProfiles[m.login] || {};
+  const displayName = prof.alias ? `${prof.alias}` : m.login;
+  const av = el('img', { class: 'chat-avatar', src: prof.avatar || m.avatar || '', alt: m.login, referrerpolicy: 'no-referrer' });
   const bodyHtml = renderMarkdown(m.body || '')
     .replace(/(^|[\s(>])@([a-zA-Z0-9-]+)/g, '$1<span class="mention">@$2</span>');
   const mentionsMe = me && new RegExp('@' + me + '\\b', 'i').test(m.body || '');
-  const bubble = el('div', { class: 'chat-bubble' },
-    el('div', { class: 'chat-meta' }, el('span', { class: 'chat-login', text: m.login }), el('span', { class: 'chat-time', text: relTime(m.at) })),
-    el('div', { class: 'chat-body', html: bodyHtml }));
-  return el('div', { class: `chat-msg${m.login === me ? ' me' : ''}${mentionsMe ? ' mention-me' : ''}` }, av, bubble);
+  const copyBtn = el('button', { class: 'chat-copy', title: 'Copy message', html: COPY_SVG, type: 'button' });
+  copyBtn.addEventListener('click', (e) => { e.stopPropagation(); copyToClipboard(m.body || '', 'Message'); });
+  const delBtn = el('button', { class: 'chat-del', title: 'Delete message', html: TRASH_SVG, type: 'button' });
+  const loginSpan = el('span', { class: 'chat-login', text: displayName });
+  if (prof.alias) loginSpan.title = `@${m.login}`; // still the GitHub account underneath
+  const row = el('div', { class: `chat-msg${m.login === me ? ' me' : ''}${mentionsMe ? ' mention-me' : ''}` }, av,
+    el('div', { class: 'chat-bubble' },
+      el('div', { class: 'chat-meta' }, loginSpan, el('span', { class: 'chat-time', text: relTime(m.at) })),
+      el('div', { class: 'chat-body', html: bodyHtml }),
+      el('div', { class: 'chat-tools' }, copyBtn, delBtn)));
+  delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteMessage(m, row); });
+  return row;
 }
 
 const activeChannel = () => teamChannels.find((c) => c.repo === teamActive) || null;
@@ -2061,13 +2301,22 @@ function ensureTeamPolling() {
 }
 
 // Load the active channel's messages (cache first, then live).
+// Re-render the open message list (after profiles/avatars change).
+function rerenderMessages() {
+  if (!teamListEl) return;
+  teamListEl.innerHTML = '';
+  for (const m of teamMsgs) teamListEl.appendChild(chatMsgEl(m, teamMe));
+  teamListEl.scrollTop = teamListEl.scrollHeight;
+}
+
 async function loadActiveChannel() {
   teamMsgs = []; teamFetchedIds = new Set();
   const ch = activeChannel();
   if (!ch) return;
+  teamProfiles = await window.gits.teamProfiles(ch.repo) || {}; // display names + avatars
   const cache = await window.gits.chatCache({ repo: ch.repo, issue: ch.issue });
   for (const m of (cache.messages || [])) if (!teamFetchedIds.has(m.id)) { teamFetchedIds.add(m.id); teamMsgs.push(m); }
-  if (teamListEl) { teamListEl.innerHTML = ''; for (const m of teamMsgs) teamListEl.appendChild(chatMsgEl(m, teamMe)); teamListEl.scrollTop = teamListEl.scrollHeight; }
+  rerenderMessages();
   await teamFetch({ initial: true });
 }
 
@@ -2154,6 +2403,13 @@ function renderChannels() {
       c.visibility === 'PUBLIC' ? el('span', { class: 'chat-channel-tag', text: 'public', title: 'Public — world-readable' }) : null,
       unread ? el('span', { class: 'chat-channel-dot' }) : null);
     row.addEventListener('click', () => switchChannel(c.repo));
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showContextMenu(e.clientX, e.clientY, [
+        { label: 'Download backup (.md)', onClick: () => exportChannel(c) },
+        { label: 'Delete channel…', onClick: () => deleteChannelFlow(c) },
+      ]);
+    });
     teamChannelsEl.appendChild(row);
   }
   const add = el('button', { class: `chat-channel-add${teamAdding ? ' active' : ''}`, text: '+ Add channel' });
@@ -2161,7 +2417,141 @@ function renderChannels() {
   teamChannelsEl.appendChild(add);
 }
 
+// Save a channel's full transcript as a .md file (fetches fresh so it's complete).
+async function exportChannel(ch) {
+  showToast('Preparing backup…');
+  let msgs = (ch.repo === teamActive) ? teamMsgs.slice() : [];
+  const r = await window.gits.chatList({ repo: ch.repo, issue: ch.issue });
+  if (r.ok && Array.isArray(r.messages)) msgs = r.messages;
+  if (!msgs.length) { showToast('No messages to back up.'); return; }
+  const name = (ch.repo.replace('/', '-')) + '-chat';
+  const res = await window.gits.chatExportMd({ markdown: buildChatMarkdown(ch, msgs), name });
+  if (res.ok) showToast('Backup saved'); else if (!res.canceled) showToast(res.error || 'Could not save the backup.');
+  return res.ok;
+}
+
+// Delete a whole channel, with a warning + the chance to download a backup first.
+async function deleteChannelFlow(ch) {
+  const shortName = ch.repo.split('/')[1] || ch.repo;
+  const choice = await uiConfirm(
+    `Delete the <b>${escapeHtml(shortName)}</b> channel?<br><br>This deletes the chat thread on GitHub for <b>everyone</b> and removes it here. ` +
+    `It can't be undone — download a backup first if you want to keep the history.`,
+    { okLabel: 'Delete channel', danger: true, extraLabel: 'Download backup (.md)' });
+  if (choice === false) return;
+  if (choice === 'extra') {
+    const saved = await exportChannel(ch);
+    if (!saved) return; // cancelled the save — abort the delete too, give them another shot
+    const confirm2 = await uiConfirm(`Backup saved. Now delete the <b>${escapeHtml(shortName)}</b> channel?`, { okLabel: 'Delete channel', danger: true });
+    if (!confirm2) return;
+  }
+  const r = await window.gits.chatDeleteChannel({ repo: ch.repo, issue: ch.issue });
+  if (!r.ok) { showToast(r.error || 'Could not delete the channel.'); return; }
+  // Drop it from local config and switch to another channel (or the setup form).
+  teamChannels = teamChannels.filter((c) => c.repo !== ch.repo);
+  delete teamSeen[ch.repo];
+  if (teamActive === ch.repo) {
+    teamActive = teamChannels[0] ? teamChannels[0].repo : null;
+    teamMsgs = []; teamFetchedIds = new Set();
+  }
+  await saveTeam();
+  renderChannels();
+  if (teamActive) loadActiveChannel(); else { teamAdding = false; renderChatMain(); }
+  showToast(r.mode === 'closed' ? 'Channel closed (no admin rights to fully delete)' : 'Channel deleted');
+}
+
 // Right column: the conversation for the active channel, or the setup form.
+// A small markdown formatting toolbar (bold/italic/code/list/link) over a chat input.
+function richToolbar(ta) {
+  const fire = () => ta.dispatchEvent(new Event('input'));
+  const wrap = (before, after, placeholder) => {
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const sel = ta.value.slice(s, e) || placeholder || '';
+    ta.value = ta.value.slice(0, s) + before + sel + after + ta.value.slice(e);
+    ta.focus();
+    ta.setSelectionRange(s + before.length, s + before.length + sel.length);
+    fire();
+  };
+  const prefixLines = (pfx) => {
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const start = ta.value.lastIndexOf('\n', s - 1) + 1;
+    const block = ta.value.slice(start, e) || 'item';
+    const out = block.split('\n').map((l) => pfx + l).join('\n');
+    ta.value = ta.value.slice(0, start) + out + ta.value.slice(e);
+    ta.focus();
+    ta.setSelectionRange(start, start + out.length);
+    fire();
+  };
+  const insertAt = (str) => {
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    ta.value = ta.value.slice(0, s) + str + ta.value.slice(e);
+    ta.focus();
+    ta.setSelectionRange(s + str.length, s + str.length);
+    fire();
+  };
+  const numberLines = () => {
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const start = ta.value.lastIndexOf('\n', s - 1) + 1;
+    const block = ta.value.slice(start, e) || 'item';
+    const out = block.split('\n').map((l, idx) => `${idx + 1}. ${l}`).join('\n');
+    ta.value = ta.value.slice(0, start) + out + ta.value.slice(e);
+    ta.focus(); ta.setSelectionRange(start, start + out.length); fire();
+  };
+  const codeBlock = () => {
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const sel = ta.value.slice(s, e) || 'code';
+    const ins = '```\n' + sel + '\n```';
+    ta.value = ta.value.slice(0, s) + ins + ta.value.slice(e);
+    ta.focus(); ta.setSelectionRange(s + 4, s + 4 + sel.length); fire();
+  };
+  const btn = (icon, title, fn) => {
+    const b = el('button', { class: 'fmt-btn', title, html: icon, type: 'button' });
+    b.addEventListener('mousedown', (ev) => ev.preventDefault()); // keep textarea selection
+    b.addEventListener('click', (ev) => { ev.preventDefault(); fn(); });
+    return b;
+  };
+  const sep = () => el('span', { class: 'fmt-sep' });
+
+  // Emoji picker — inserts an emoji into the message (chat content, not UI chrome).
+  const EMOJI = ['👍', '👎', '🎉', '🙏', '🔥', '✅', '❌', '👀', '🚀', '💡', '❤️', '😀', '😂', '😅', '🤔', '👌', '💯', '🙌', '😎', '🐛'];
+  const panel = el('div', { class: 'emoji-panel hidden' });
+  EMOJI.forEach((em) => {
+    const b = el('button', { class: 'emoji-pick', text: em, type: 'button' });
+    b.addEventListener('click', (ev) => { ev.preventDefault(); insertAt(em); panel.classList.add('hidden'); });
+    panel.appendChild(b);
+  });
+  const emojiBtn = btn(SMILE_SVG, 'Emoji', () => panel.classList.toggle('hidden'));
+  emojiBtn.classList.add('fmt-emoji');
+
+  return el('div', { class: 'chat-toolbar' },
+    btn(FMT.bold, 'Bold', () => wrap('**', '**', 'bold')),
+    btn(FMT.italic, 'Italic', () => wrap('*', '*', 'italic')),
+    btn(FMT.strike, 'Strikethrough', () => wrap('~~', '~~', 'text')),
+    sep(),
+    btn(FMT.code, 'Inline code', () => wrap('`', '`', 'code')),
+    btn(FMT.codeblock, 'Code block', codeBlock),
+    sep(),
+    btn(FMT.bullet, 'Bulleted list', () => prefixLines('- ')),
+    btn(FMT.number, 'Numbered list', numberLines),
+    btn(FMT.quote, 'Quote', () => prefixLines('> ')),
+    sep(),
+    btn(FMT.link, 'Link', () => wrap('[', '](url)', 'text')),
+    emojiBtn, panel);
+}
+
+// Formatting toolbar icons (Feather-style, currentColor, 15px).
+const FMT_ICON = (paths) => `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const FMT = {
+  bold: FMT_ICON('<path d="M7 5h7a3.5 3.5 0 0 1 0 7H7z"/><path d="M7 12h8a3.5 3.5 0 0 1 0 7H7z"/>'),
+  italic: FMT_ICON('<line x1="19" y1="5" x2="11" y2="5"/><line x1="13" y1="19" x2="5" y2="19"/><line x1="15" y1="5" x2="9" y2="19"/>'),
+  strike: FMT_ICON('<line x1="4" y1="12" x2="20" y2="12"/><path d="M7.5 8.5a4 3 0 0 1 7-1.2"/><path d="M16.5 15.5a4 3 0 0 1-7 1.2"/>'),
+  code: FMT_ICON('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'),
+  codeblock: FMT_ICON('<rect x="2.5" y="5" width="19" height="14" rx="2"/><polyline points="9 10 7 12 9 14"/><polyline points="15 10 17 12 15 14"/>'),
+  bullet: FMT_ICON('<line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.3" fill="currentColor" stroke="none"/>'),
+  number: FMT_ICON('<line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><path d="M4 5.5h1.3V10"/><path d="M3.4 14.4a1.1 1.1 0 0 1 2.2.1c0 1-2.2 1.3-2.2 2.6h2.3"/>'),
+  quote: FMT_ICON('<line x1="5" y1="5" x2="5" y2="19"/><line x1="9" y1="7" x2="20" y2="7"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="17" x2="16" y2="17"/>'),
+  link: FMT_ICON('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
+};
+
 function renderChatMain() {
   if (!teamMainEl) return;
   teamMainEl.innerHTML = '';
@@ -2209,11 +2599,19 @@ function renderChatMain() {
     input.focus();
   };
   input.addEventListener('input', autoGrow);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); return; }
+    if (e.key === 'Enter' && e.shiftKey) { if (maybeContinueList(input)) { e.preventDefault(); autoGrow(); } }
+  });
   sendBtn.addEventListener('click', send);
-  const proposeBtn = el('button', { class: 'tiny-btn cmd-propose', title: 'Propose an AI command for a teammate to approve & run', html: ZAP_SVG });
+  const proposeBtn = el('button', { class: 'cmd-propose', title: 'Propose an AI command for a teammate to approve & run', html: ZAP_SVG });
   proposeBtn.addEventListener('click', () => openProposeModal(ch));
-  teamMainEl.append(list, makeComposerResizer(input, autoGrow), el('div', { class: 'chat-foot' }, proposeBtn, input, sendBtn));
+  // One cohesive composer card: resize grip · format toolbar · text · footer (AI-propose + Send).
+  const composer = el('div', { class: 'chat-composer' },
+    makeComposerResizer(input, autoGrow),
+    richToolbar(input),
+    el('div', { class: 'chat-foot' }, proposeBtn, input, sendBtn));
+  teamMainEl.append(list, composer);
 
   for (const m of teamMsgs) list.appendChild(chatMsgEl(m, teamMe));
   list.scrollTop = list.scrollHeight;
@@ -2228,6 +2626,7 @@ async function startTeamBackground() {
   teamMe = who.ok ? who.login : null;
   const ch = activeChannel();
   if (ch) {
+    teamProfiles = await window.gits.teamProfiles(ch.repo) || {};
     const cache = await window.gits.chatCache({ repo: ch.repo, issue: ch.issue });
     for (const m of (cache.messages || [])) if (!teamFetchedIds.has(m.id)) { teamFetchedIds.add(m.id); teamMsgs.push(m); }
     refreshChatBadge();
@@ -2245,10 +2644,23 @@ async function openTeamChat() {
   teamChatId = id;
   teamChannelsEl = el('div', { class: 'chat-channels' });
   teamMainEl = el('div', { class: 'chat-main' });
+  const avatarBtn = el('button', { class: 'tiny-btn', title: 'Set your avatar for this team', text: 'Set avatar' });
+  avatarBtn.addEventListener('click', async () => {
+    const ch = activeChannel();
+    if (!ch) { showToast('Open a channel first.'); return; }
+    const p = await window.gits.teamPickImage();
+    if (!p) return;
+    showToast('Updating your avatar…');
+    const r = await window.gits.teamSetProfile({ repo: ch.repo, login: teamMe, avatarPath: p });
+    if (!r.ok) { showToast(r.error || 'Could not set avatar.'); return; }
+    teamProfiles = r.profiles || teamProfiles;
+    rerenderMessages();
+    showToast('Avatar updated.');
+  });
   const pane = el('div', { class: 'term-pane chat-pane', 'data-id': id },
     el('div', { class: 'chat-head' },
       el('span', { class: 'chat-title', text: 'Team chat' }),
-      el('div', { class: 'chat-head-right' }, el('span', { class: 'chat-sub', text: teamMe ? `you: ${teamMe}` : '' }))),
+      el('div', { class: 'chat-head-right' }, el('span', { class: 'chat-sub', text: teamMe ? `you: ${teamMe}` : '' }), avatarBtn)),
     el('div', { class: 'chat-body2' }, teamChannelsEl, teamMainEl));
   terminalsEl.appendChild(pane);
 
@@ -2354,6 +2766,76 @@ function notifyFinished(s) {
 // ---------------------------------------------------------------------------
 // Keyboard shortcuts (from main: ⌘T/⌘W/⌘K/⌘1-9 on macOS; Ctrl+Shift on others)
 // ---------------------------------------------------------------------------
+// Opened from the OS (Gitsidian as the file handler, e.g. double-clicked .md).
+// Markdown lands in the rendered preview; images in the image pane; the rest in
+// the editor. Binary/oversized files fall back to the system default app.
+function openExternalFile(filePath) {
+  if (!filePath) return;
+  welcomeEl.classList.add('hidden');
+  if (IMAGE_EXTS.test(filePath)) { openImagePreview(filePath); return; }
+  openEditor(filePath, { preview: MD_EXTS.test(filePath) });
+}
+// From the OS / a deep link: { path, kind: 'terminal' | 'file' }.
+window.gits.onOpenItem((item) => {
+  if (!item || !item.path) return;
+  if (item.kind === 'terminal') { openTerminalAt(item.path); noteTerminalDrop(); }
+  else openExternalFile(item.path);
+});
+
+// Open a terminal tab rooted at a folder (drag-drop, "Open With", gitsidian://).
+function openTerminalAt(dir) {
+  welcomeEl.classList.add('hidden');
+  openSession(dir, basename(dir) || 'terminal', undefined);
+}
+// A one-time, honest heads-up: we open a *fresh* terminal here — we can't adopt,
+// mirror, or close your existing Terminal/iTerm window (the OS owns that session).
+function noteTerminalDrop() {
+  if (localStorage.getItem('gits-termdrop-note')) return;
+  localStorage.setItem('gits-termdrop-note', '1');
+  uiConfirm(
+    "Opened a terminal here. <br><br>Heads-up: Gitsidian starts a <b>fresh</b> shell in that folder — it can't take over, mirror, or close your existing Terminal/iTerm window, which stays under your operating system's control. Close that window yourself once you've moved over, and follow any prompts macOS shows.",
+    { okLabel: 'Got it' });
+}
+
+// Collect real filesystem paths from a drop (Finder files + file:// URIs, e.g. a
+// Terminal window's proxy icon, which carries its working directory).
+function collectDropPaths(e) {
+  const out = [];
+  for (const f of (e.dataTransfer.files || [])) { const p = window.gits.pathForFile(f); if (p) out.push(p); }
+  if (!out.length) {
+    const raw = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '';
+    raw.split(/\r?\n/).forEach((line) => {
+      line = line.trim(); if (!line || line.startsWith('#')) return;
+      if (/^file:\/\//i.test(line)) { try { out.push(decodeURIComponent(new URL(line).pathname)); } catch {} }
+      else if (line.startsWith('/')) out.push(line);
+    });
+  }
+  return [...new Set(out)];
+}
+// Is this an external (Finder/Terminal) drag, not an internal tree/sidebar one?
+function isExternalDrag(e) {
+  const t = [...(e.dataTransfer.types || [])];
+  return t.includes('Files') || t.includes('public.file-url') || t.includes('text/uri-list');
+}
+// Shared drop logic: folders open terminals; files insert into the composer (if
+// dropped on a terminal) or open in the editor.
+async function handleExternalDrop(e, session) {
+  const paths = collectDropPaths(e);
+  if (!paths.length) return;
+  const kinds = await window.gits.pathKinds(paths);
+  const dirs = kinds.filter((k) => k.dir).map((k) => k.path);
+  const files = kinds.filter((k) => !k.dir && !k.missing).map((k) => k.path);
+  for (const d of dirs.slice(0, 6)) await openTerminalAt(d);
+  if (dirs.length) noteTerminalDrop();
+  if (files.length) {
+    if (session && session.composerInsert) session.composerInsert(files.map((p) => (/\s/.test(p) ? `"${p}"` : p)).join(' ') + ' ');
+    else openExternalFile(files[0]);
+  }
+}
+// Allow external drops anywhere; open terminals for folders dropped on chrome.
+document.addEventListener('dragover', (e) => { if (isExternalDrag(e)) e.preventDefault(); });
+document.addEventListener('drop', (e) => { if (isExternalDrag(e)) { e.preventDefault(); handleExternalDrop(e, null); } });
+
 window.gits.onShortcut((action) => {
   if (action === 'new-terminal') {
     openSession(undefined, 'terminal', 'shell');
@@ -3057,14 +3539,27 @@ updateGo.addEventListener('click', async () => {
 const settingsModal = document.getElementById('settings-modal');
 document.getElementById('open-settings').addEventListener('click', () => {
   const wrap = document.getElementById('settings-accents');
+  const themeGrid = document.getElementById('settings-themes');
+  const accentColor = document.getElementById('settings-accent-hex');
+  const accentText = document.getElementById('settings-accent-hexin');
+  const bgColor = document.getElementById('settings-bg-hex');
+  const bgText = document.getElementById('settings-bg-hexin');
+  // Keep the custom-colour fields mirroring whatever is active (preset or custom).
+  const syncCustomFields = () => {
+    const ah = settings.accent === 'custom' ? settings.accentHex : (ACCENTS[settings.accent] || ACCENTS.crimson)[0];
+    const bh = settings.theme === 'custom' ? settings.bgHex : (THEMES[settings.theme] || THEMES.midnight).bg;
+    accentColor.value = ah; accentText.value = ah; bgColor.value = bh; bgText.value = bh;
+  };
+  const markAccent = () => [...wrap.children].forEach((c) => c.classList.toggle('active', settings.accent !== 'custom' && c.title === settings.accent));
+  const markTheme = () => [...themeGrid.children].forEach((c) => c.classList.toggle('active', c.dataset.themeKey === settings.theme));
+
   wrap.innerHTML = '';
   for (const [key, [a]] of Object.entries(ACCENTS)) {
     const sw = el('div', { class: `swatch${key === settings.accent ? ' active' : ''}`, title: key });
     sw.style.background = a;
     sw.addEventListener('click', () => {
       settings.accent = key; saveSettings(); applyAccent();
-      [...wrap.children].forEach((c) => c.classList.remove('active'));
-      sw.classList.add('active');
+      markAccent(); syncCustomFields();
     });
     wrap.appendChild(sw);
   }
@@ -3086,13 +3581,84 @@ document.getElementById('open-settings').addEventListener('click', () => {
   const sb = document.getElementById('settings-scrollback');
   sb.value = String(settings.scrollback);
   sb.onchange = () => { settings.scrollback = parseInt(sb.value, 10); saveSettings(); }; // applies to new terminals
-  for (const r of document.getElementsByName('theme')) {
-    r.checked = r.value === settings.theme;
-    r.onchange = () => { if (r.checked) { settings.theme = r.value; saveSettings(); applyTheme(); } };
+  themeGrid.innerHTML = '';
+  const dotColor = settings.accent === 'custom' ? settings.accentHex : (ACCENTS[settings.accent] || ACCENTS.crimson)[1];
+  for (const [key, t] of Object.entries(THEMES)) {
+    const sw = el('div', { class: `theme-swatch${key === settings.theme ? ' active' : ''}`, title: t.label, 'data-theme-key': key });
+    sw.appendChild(el('div', { class: 'theme-chip', style: `background:${t.bg}` },
+      el('span', { class: 'theme-dot', style: `background:${dotColor}` })));
+    sw.appendChild(el('div', { class: 'theme-name', text: t.label }));
+    sw.addEventListener('click', () => {
+      settings.theme = key; saveSettings(); applyTheme();
+      markTheme(); syncCustomFields();
+    });
+    themeGrid.appendChild(sw);
   }
+  // Custom hex pickers — picking a colour switches accent/theme to "custom".
+  const applyCustomAccent = (hex) => {
+    if (!isHex(hex)) { syncCustomFields(); return; }
+    settings.accent = 'custom'; settings.accentHex = normHex(hex); saveSettings(); applyAccent();
+    markAccent(); syncCustomFields();
+  };
+  const applyCustomBg = (hex) => {
+    if (!isHex(hex)) { syncCustomFields(); return; }
+    settings.theme = 'custom'; settings.bgHex = normHex(hex); saveSettings(); applyTheme();
+    markTheme(); syncCustomFields();
+  };
+  syncCustomFields();
+  accentColor.oninput = () => applyCustomAccent(accentColor.value);
+  accentText.onchange = () => applyCustomAccent(accentText.value);
+  bgColor.oninput = () => applyCustomBg(bgColor.value);
+  bgText.onchange = () => applyCustomBg(bgText.value);
   const restore = document.getElementById('settings-restore');
   restore.checked = settings.restoreTabs;
   restore.onchange = () => { settings.restoreTabs = restore.checked; saveSettings(); if (restore.checked) persistSession(); };
+
+  // Files — default Markdown app.
+  const mdBtn = document.getElementById('settings-md-default');
+  const mdStatus = document.getElementById('settings-md-status');
+  if (mdBtn) {
+    const refreshMd = async () => {
+      const info = await window.gits.markdownDefaultInfo();
+      if (info.platform !== 'darwin') {
+        mdBtn.disabled = true;
+        mdStatus.textContent = info.platform === 'win32'
+          ? 'On Windows, set this in Settings → Apps → Default apps.'
+          : 'On Linux, use xdg-mime / your file manager.';
+        return;
+      }
+      mdBtn.disabled = false;
+      if (info.isDefault) { mdBtn.textContent = 'Gitsidian is your Markdown app ✓'; mdBtn.disabled = true; mdStatus.textContent = ''; }
+      else { mdBtn.textContent = 'Make Gitsidian my Markdown app'; mdStatus.textContent = ''; }
+    };
+    refreshMd();
+    mdBtn.onclick = async () => {
+      mdBtn.disabled = true; mdStatus.textContent = 'Setting…';
+      const r = await window.gits.setMarkdownDefault();
+      if (r.ok) { mdStatus.textContent = ''; showToast('Gitsidian is now your default for Markdown.'); refreshMd(); return; }
+      mdBtn.disabled = false;
+      if (r.needsDuti) {
+        mdStatus.textContent = '';
+        const go = await uiConfirm(
+          "macOS has no built-in switch for this, so Gitsidian uses the small <b>duti</b> tool — which isn't installed.<br><br>" +
+          "Install it with <code>brew install duti</code> then try again, or set it manually: in Finder, right-click any <code>.md</code> file → " +
+          "<b>Get Info</b> → <b>Open with</b> → choose <b>Gitsidian</b> → <b>Change All…</b>",
+          { okLabel: 'Copy brew command' });
+        if (go === true) { window.gits.copyText('brew install duti'); showToast('Copied: brew install duti'); }
+      } else {
+        mdStatus.textContent = r.error || 'Could not set the default.';
+      }
+    };
+  }
+  const gitsBtn = document.getElementById('settings-gits-cmd');
+  if (gitsBtn) {
+    gitsBtn.onclick = () => {
+      window.gits.copyText('gits() { open "gitsidian://terminal?cwd=$(pwd)"; }');
+      const st = document.getElementById('settings-gits-status');
+      if (st) st.textContent = 'Copied — paste into ~/.zshrc, then run: gits';
+      showToast("Copied. Add it to ~/.zshrc, reload, and run 'gits' in any folder.");
+    };
+  }
   const auto = document.getElementById('settings-autoupdate');
   auto.checked = settings.autoUpdate;
   auto.onchange = () => { settings.autoUpdate = auto.checked; saveSettings(); };
@@ -3109,6 +3675,36 @@ document.getElementById('open-settings').addEventListener('click', () => {
     checkBtn.textContent = old;
     checkBtn.disabled = false;
   };
+
+  // Team — display-name alias (stored in the hub's members.json, same as avatars).
+  const aliasInput = document.getElementById('settings-alias');
+  const aliasSave = document.getElementById('settings-alias-save');
+  const aliasHint = document.getElementById('settings-alias-hint');
+  const aliasRepo = (activeChannel() && activeChannel().repo) || (teamChannels[0] && teamChannels[0].repo) || null;
+  aliasInput.value = (teamMe && teamProfiles[teamMe] && teamProfiles[teamMe].alias) || '';
+  const noTeam = !aliasRepo || !teamMe;
+  aliasInput.disabled = noTeam;
+  aliasSave.disabled = noTeam;
+  if (noTeam) aliasHint.textContent = 'Set up Team chat first (chat icon in the sidebar), then choose a display name here.';
+  aliasSave.onclick = async () => {
+    aliasSave.disabled = true;
+    const r = await window.gits.teamSetProfile({ repo: aliasRepo, login: teamMe, alias: aliasInput.value.trim() });
+    aliasSave.disabled = false;
+    if (!r.ok) { showToast(r.error || 'Could not save your name.'); return; }
+    teamProfiles = r.profiles || teamProfiles;
+    rerenderMessages();
+    showToast('Display name saved.');
+  };
+
+  // Section tabs.
+  const tabs = [...document.querySelectorAll('.settings-tab')];
+  const secs = [...document.querySelectorAll('.settings-sec')];
+  tabs.forEach((tab) => { tab.onclick = () => {
+    tabs.forEach((t) => t.classList.toggle('active', t === tab));
+    secs.forEach((s) => s.classList.toggle('hidden', s.dataset.sec !== tab.dataset.sec));
+  }; });
+  tabs[0].click(); // default to Appearance each open
+
   settingsModal.classList.remove('hidden');
 });
 document.getElementById('settings-close').addEventListener('click', () => settingsModal.classList.add('hidden'));

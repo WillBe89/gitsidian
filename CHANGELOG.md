@@ -2,7 +2,67 @@
 
 All notable changes to Gitsidian.
 
-## 0.6.2
+## 0.7.0 — 2026-06-24
+
+Gitsidian grows into a calm home for your repos, terminals, notes, and team — it
+now opens your Markdown files, can be the app you open a terminal *anywhere* with,
+and adds full file management, a polished chat composer, custom themes, and more.
+
+- **Open Markdown files in Gitsidian** — Gitsidian can now be a file handler:
+  double-click (or "Open With") a `.md`/`.markdown`/`.mdx` file and it opens
+  straight into the **rendered preview**, with the editor a click away. There's a
+  **"Make Gitsidian my Markdown app"** button under **Settings → Files** (macOS;
+  uses `duti` when available, with manual steps otherwise). Other text files open
+  in the editor; a single running instance handles every open.
+- **Open a terminal anywhere** — **drag a folder** (or a Terminal window's
+  title-bar icon, which carries its working directory) onto Gitsidian and it opens
+  a **terminal tab rooted there**. Also works via "Open With Gitsidian" on a folder
+  and a new **`gitsidian://terminal?cwd=…` URL scheme** — Settings → Files copies a
+  one-line **`gits`** shell command so you can run `gits` in any folder to open it
+  here. A one-time note is honest about the limits: Gitsidian starts a *fresh*
+  shell — it can't adopt, mirror, or close your existing Terminal/iTerm session.
+
+- **Fuller file management in the tree** — right-click any file/folder for
+  **Copy, Cut, Duplicate, Paste, and Move to…** (a folder picker), on top of the
+  existing new/rename/delete/drag-move. Right-click empty tree space for **New
+  file / New folder / Paste** at the project root. Copies auto-rename on collision
+  ("a copy.txt"); folders copy recursively.
+- **Polished chat composer** — the grip, toolbar, text box, and Send/AI-propose
+  buttons are now one clean bordered card (no more floating pieces). The toolbar
+  is all **SVG icons with hover tooltips**: Bold, Italic, Strikethrough, Inline
+  code, Code block, Bulleted list, Numbered list, Quote, Link, and Emoji.
+  - Lists **auto-continue**: press Shift+Enter on a `- ` or `1.` line and the next
+    bullet/number is added for you (an empty item ends the list).
+  - **Quote** now actually renders as a styled block quote in chat (it was
+    previously shown as literal `> ` text), and **strikethrough** (`~~`) renders too.
+- **Copy & select chat text** — chat messages and the proposed-command prompt are
+  now selectable, with a **copy button on hover** (great for sharing a directory
+  or prompt with a teammate).
+- **Delete chat messages & channels** — hover a message for a **delete** button
+  (removes that comment on GitHub), and **right-click a channel** to **delete the
+  whole channel** or **download a `.md` backup** of the transcript first. Deleting
+  a channel warns clearly and offers the backup before it removes the GitHub thread
+  for everyone. (Copy toasts now appear at the top, clear of the message box.)
+- **Custom team avatars** — "Set avatar" in chat picks an image (auto-downscaled),
+  stored in the team's hub repo (`.gitsidian/members.json`) so everyone sees it in
+  place of the GitHub avatar. The same store carries a display-name **alias** —
+  your GitHub account stays the auth.
+- **Sectioned settings + theme picker** — Settings is now organised into tabs
+  (Appearance / Sessions / Team / Updates). Appearance adds a **theme picker** with
+  seven backgrounds beyond plain day/night — **Midnight, Ink** (bold on black),
+  **Muted, Grape** (purple), **Nord, Day**, and a warm **Claude** light scheme;
+  terminals and the editor follow. Your **display-name alias** is set cleanly under
+  the Team tab.
+- **Fully custom colours** — alongside the presets, pick **any accent and any
+  background** with hex/colour pickers. The app derives a coherent surface palette
+  (panels, borders, text, terminal) from your background and follows its
+  light/dark automatically. Presets stay one click away.
+- **Fix:** a saved **display-name alias** (or avatar) now shows immediately — the
+  app uses the just-written profile instead of re-reading GitHub, which could
+  briefly return a stale copy and make the change look like it didn't take.
+- **Fix:** the drag-and-drop highlight (the red border in the sidebar and around
+  a terminal) could get stuck after a cancelled drag or one that left the window —
+  now always clears.
 
 - **Fix:** the split (`⊟`) picker opened and closed instantly (a click-bubbling
   bug) and looked broken — it now stays open.

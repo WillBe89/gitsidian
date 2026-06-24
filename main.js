@@ -1,7 +1,7 @@
 // Gitsidian — main process. Authored by will.be.
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, nativeImage } = require('electron');
 const { execFile, execFileSync } = require('child_process');
 const pty = require('node-pty');
 const path = require('path');
@@ -1354,6 +1354,45 @@ ipcMain.handle('fs:move', (_e, { src, destDir } = {}) => {
   }
 });
 
+// Pick a name in destDir that doesn't collide ("foo.txt" → "foo copy.txt" → "foo copy 2.txt").
+function uniqueDest(destDir, base) {
+  let target = path.join(destDir, base);
+  if (!fs.existsSync(target)) return target;
+  const ext = path.extname(base);
+  const stem = base.slice(0, base.length - ext.length);
+  for (let i = 1; i < 1000; i++) {
+    const name = i === 1 ? `${stem} copy${ext}` : `${stem} copy ${i}${ext}`;
+    target = path.join(destDir, name);
+    if (!fs.existsSync(target)) return target;
+  }
+  return path.join(destDir, `${stem}-${Date.now()}${ext}`);
+}
+
+// Copy or move (cut) a file/folder into destDir, auto-renaming on collision.
+// Also powers Duplicate (copy into the same folder).
+ipcMain.handle('fs:paste', (_e, { src, destDir, cut } = {}) => {
+  try {
+    const s = expandHome(src), d = expandHome(destDir);
+    if (!fs.existsSync(s)) return { ok: false, error: 'The source no longer exists.' };
+    if (!fs.existsSync(d)) return { ok: false, error: 'The destination folder no longer exists.' };
+    if ((d + path.sep).startsWith(s + path.sep)) return { ok: false, error: "Can't move a folder into itself." };
+    if (cut && path.dirname(s) === d) return { ok: true, path: s }; // cut+paste into same folder: no-op
+    const target = uniqueDest(d, path.basename(s));
+    if (cut) fs.renameSync(s, target);
+    else fs.cpSync(s, target, { recursive: true });
+    return { ok: true, path: target };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Could not complete that.' };
+  }
+});
+
+// Folder picker for "Move to…".
+ipcMain.handle('fs:pickFolder', async (e, title) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], title: title || 'Choose a destination folder' });
+  return (res.canceled || !res.filePaths.length) ? null : res.filePaths[0];
+});
+
 // Watch open editor files so the app can reload them when changed on disk
 // (e.g. an AI agent edited the file). Re-attaches across atomic-save renames.
 const fileWatchers = new Map(); // abs path -> { watcher, timer }
@@ -1497,11 +1536,99 @@ ipcMain.handle('team:invite', async (_e, { repo, username, permission } = {}) =>
   return { ok: true, user: u };
 });
 
+// Team profiles (display name + avatar) live in `.gitsidian/members.json` in the
+// hub repo, read/written via the gh contents API — no server, shared with the team.
+const MEMBERS_PATH = '.gitsidian/members.json';
+function decodeB64Json(b64) { try { return JSON.parse(Buffer.from((b64 || '').replace(/\s/g, ''), 'base64').toString('utf8')) || {}; } catch { return {}; } }
+
+ipcMain.handle('team:profiles', async (_e, repo) => {
+  if (!repo) return {};
+  const r = await run('gh', ['api', `repos/${repo}/contents/${MEMBERS_PATH}`, '--jq', '.content']);
+  return r.err ? {} : decodeB64Json(r.stdout);
+});
+
+ipcMain.handle('team:pickImage', async (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const res = await dialog.showOpenDialog(win, {
+    properties: ['openFile'], title: 'Choose an avatar image',
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+  });
+  return (res.canceled || !res.filePaths.length) ? null : res.filePaths[0];
+});
+
+// Set your display name and/or avatar in the team's members.json (merge + push).
+ipcMain.handle('team:setProfile', async (_e, { repo, login, alias, avatarPath } = {}) => {
+  if (!repo || !login) return { ok: false, error: 'Team chat is not set up.' };
+  const get = await run('gh', ['api', `repos/${repo}/contents/${MEMBERS_PATH}`]);
+  let profiles = {}, sha = null;
+  if (!get.err) { try { const j = JSON.parse(get.stdout); sha = j.sha; profiles = decodeB64Json(j.content); } catch {} }
+  const entry = profiles[login] || {};
+  if (alias !== undefined) { const a = String(alias || '').trim(); if (a) entry.alias = a; else delete entry.alias; }
+  if (avatarPath) {
+    try {
+      const img = nativeImage.createFromPath(avatarPath);
+      if (img.isEmpty()) return { ok: false, error: 'That image could not be read.' };
+      entry.avatar = img.resize({ width: 96, height: 96 }).toDataURL();
+    } catch { return { ok: false, error: 'Could not process that image.' }; }
+  }
+  profiles[login] = entry;
+  const content = Buffer.from(JSON.stringify(profiles, null, 2)).toString('base64');
+  const args = ['api', '-X', 'PUT', `repos/${repo}/contents/${MEMBERS_PATH}`, '-f', `message=Update ${login} profile`, '-f', `content=${content}`];
+  if (sha) args.push('-f', `sha=${sha}`);
+  const put = await run('gh', args);
+  if (put.err) return { ok: false, error: (put.stderr || 'Could not save your profile.').trim() };
+  // Return the authoritative merged profiles so the renderer doesn't have to
+  // re-GET (the contents API can serve a stale copy right after a write).
+  return { ok: true, profiles };
+});
+
 ipcMain.handle('team:chatPost', async (_e, { repo, issue, body } = {}) => {
   if (!body || !body.trim()) return { ok: false, error: 'Empty message.' };
   const r = await run('gh', ['api', '-X', 'POST', `repos/${repo}/issues/${issue}/comments`, '-f', `body=${body}`]);
   if (r.err) return { ok: false, error: r.stderr || 'Could not send your message.' };
   return { ok: true };
+});
+
+// Delete a single chat message (issue comment). GitHub allows the comment author
+// or anyone with write/admin on the repo; otherwise it 403s (surfaced as an error).
+ipcMain.handle('team:chatDelete', async (_e, { repo, id } = {}) => {
+  if (!repo || !id) return { ok: false, error: 'Missing message.' };
+  const r = await run('gh', ['api', '-X', 'DELETE', `repos/${repo}/issues/comments/${id}`]);
+  if (r.err) {
+    const msg = (r.stderr || '').trim();
+    if (/403|forbidden/i.test(msg)) return { ok: false, error: "You can only delete your own messages (or any if you own the repo)." };
+    return { ok: false, error: msg || 'Could not delete the message.' };
+  }
+  return { ok: true };
+});
+
+// Delete a whole channel = the repo's chat issue. Tries a permanent GraphQL
+// deleteIssue (needs admin/maintain on the repo); falls back to closing it.
+ipcMain.handle('team:channelDelete', async (_e, { repo, issue } = {}) => {
+  if (!repo || !issue) return { ok: false, error: 'Team chat is not set up.' };
+  const info = await run('gh', ['api', `repos/${repo}/issues/${issue}`, '--jq', '.node_id']);
+  const nodeId = (info.stdout || '').trim();
+  if (!info.err && nodeId) {
+    const del = await run('gh', ['api', 'graphql', '-f',
+      `query=mutation{deleteIssue(input:{issueId:"${nodeId}"}){clientMutationId}}`]);
+    if (!del.err) return { ok: true, mode: 'deleted' };
+  }
+  const close = await run('gh', ['issue', 'close', String(issue), '--repo', repo]);
+  if (!close.err) return { ok: true, mode: 'closed' };
+  return { ok: false, error: (close.stderr || 'Could not delete the channel.').trim() };
+});
+
+// Save a chat transcript to a .md file the user picks.
+ipcMain.handle('chat:exportMd', async (e, { markdown, name } = {}) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const res = await dialog.showSaveDialog(win, {
+    title: 'Save chat backup',
+    defaultPath: (name || 'chat-backup') + '.md',
+    filters: [{ name: 'Markdown', extensions: ['md'] }],
+  });
+  if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+  try { fs.writeFileSync(res.filePath, markdown || '', 'utf8'); return { ok: true, path: res.filePath }; }
+  catch (err) { return { ok: false, error: String(err && err.message || err) }; }
 });
 
 // ===========================================================================
@@ -1611,6 +1738,9 @@ function downloadToFile(url, destPath, onProgress, redirects = 0) {
 
 ipcMain.handle('app:version', () => app.getVersion());
 
+// Copy text to the system clipboard (reliable, no web-permission prompt).
+ipcMain.handle('clipboard:write', (_e, text) => { clipboard.writeText(String(text == null ? '' : text)); return true; });
+
 ipcMain.handle('update:check', async () => {
   try { return { ok: true, ...(await checkForUpdate()) }; }
   catch (e) { return { ok: false, error: e.message || 'Update check failed.' }; }
@@ -1673,13 +1803,115 @@ ipcMain.handle('update:deleteFile', (_e, p) => {
 });
 
 // ===========================================================================
+// Open files from the OS (Gitsidian as a file handler, e.g. default for .md)
+// ===========================================================================
+// Extensions we'll open when launched as the handler. Markdown leads (the app's
+// renderer is the selling point); a few plain-text kinds tag along.
+const OPENABLE = /\.(md|markdown|mdx|mdown|markdn|txt|text|log|json|ya?ml|toml|csv)$/i;
+let mainWin = null;
+const pendingOpen = [];
+
+// Queue an OS-opened item. Directories open as a terminal tab; files open in the
+// editor/preview. `terminal:true` forces a terminal even for a file's folder.
+function queueOpenItem(p, terminal = false) {
+  let st; try { st = fs.statSync(p); } catch { return; }
+  const abs = path.resolve(p);
+  if (st.isDirectory()) pendingOpen.push({ path: abs, kind: 'terminal' });
+  else if (terminal) pendingOpen.push({ path: path.dirname(abs), kind: 'terminal' });
+  else pendingOpen.push({ path: abs, kind: 'file' });
+  flushPendingOpen();
+}
+function queueOpenTerminal(dir) { // from the gitsidian:// scheme
+  try { if (dir && fs.existsSync(dir)) { pendingOpen.push({ path: path.resolve(dir), kind: 'terminal' }); flushPendingOpen(); } } catch {}
+}
+function flushPendingOpen() {
+  if (!mainWin || mainWin.isDestroyed()) return;
+  const send = () => { while (pendingOpen.length) mainWin.webContents.send('open-external-item', pendingOpen.shift()); };
+  if (mainWin.webContents.isLoading()) mainWin.webContents.once('did-finish-load', send);
+  else send();
+}
+// Pull openable path / URL arguments out of an argv (Windows/Linux deliver here).
+function consumeArgv(argv) {
+  for (const a of (argv || []).slice(1)) {
+    if (!a || a.startsWith('-')) continue;
+    if (/^gitsidian:\/\//i.test(a)) { handleDeepLink(a); continue; }
+    try { const st = fs.statSync(a); if (st.isDirectory() || OPENABLE.test(a)) queueOpenItem(a); } catch {}
+  }
+}
+// gitsidian://terminal?cwd=/path  → open a terminal there.
+function handleDeepLink(url) {
+  try {
+    const u = new URL(url);
+    const host = (u.hostname || u.pathname.replace(/^\/+/, '')).toLowerCase();
+    if (host.startsWith('terminal')) {
+      const cwd = u.searchParams.get('cwd') || u.searchParams.get('path');
+      if (cwd) queueOpenTerminal(decodeURIComponent(cwd));
+    }
+  } catch {}
+}
+
+// macOS delivers files via 'open-file' and deep links via 'open-url' (either can
+// fire before the window exists — both queue and flush once it's ready).
+app.on('open-file', (e, p) => { e.preventDefault(); queueOpenItem(p); });
+app.on('open-url', (e, url) => { e.preventDefault(); handleDeepLink(url); });
+// Register the gitsidian:// scheme so other apps / scripts can open a terminal.
+try { app.setAsDefaultProtocolClient('gitsidian'); } catch {}
+
+// One running instance: a second launch (double-click / deep link) routes into
+// the existing window instead of opening a new app.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', (_e, argv) => {
+    if (mainWin) { if (mainWin.isMinimized()) mainWin.restore(); mainWin.focus(); }
+    consumeArgv(argv);
+  });
+}
+
+// Classify dropped paths (file vs directory) for the renderer's drag-drop.
+ipcMain.handle('path:kinds', (_e, paths) => (paths || []).map((p) => {
+  try { return { path: p, dir: fs.statSync(p).isDirectory() }; } catch { return { path: p, dir: false, missing: true }; }
+}));
+
+// Set Gitsidian as the default app for Markdown. macOS has no public Electron
+// API for file-type defaults, so we use `duti` when present (one-click); without
+// it we report back so the renderer can show manual steps.
+ipcMain.handle('app:markdownDefaultInfo', async () => {
+  const info = { platform: process.platform, bundleId: 'com.willbe.gitsidian', hasDuti: false, isDefault: false };
+  if (process.platform !== 'darwin') return info;
+  const duti = await run('duti', ['-V']);
+  info.hasDuti = !duti.err;
+  const cur = await run('duti', ['-x', 'md']); // current handler for .md
+  info.isDefault = !cur.err && /Gitsidian/i.test(cur.stdout || '');
+  return info;
+});
+ipcMain.handle('app:setMarkdownDefault', async () => {
+  if (process.platform !== 'darwin') return { ok: false, error: 'Setting the default app is only supported on macOS right now.' };
+  const duti = await run('duti', ['-V']);
+  if (duti.err) return { ok: false, needsDuti: true };
+  const exts = ['md', 'markdown', 'mdx', 'mdown', 'markdn'];
+  const fails = [];
+  for (const ext of exts) {
+    const r = await run('duti', ['-s', 'com.willbe.gitsidian', ext, 'all']);
+    if (r.err) fails.push(`${ext}: ${(r.stderr || 'failed').trim()}`);
+  }
+  // Also bind the markdown UTI so editors that ask by type follow suit.
+  await run('duti', ['-s', 'com.willbe.gitsidian', 'net.daringfireball.markdown', 'all']);
+  if (fails.length === exts.length) return { ok: false, error: fails[0] || 'duti could not set the default.' };
+  return { ok: true, partial: fails.length ? fails : null };
+});
+
+// ===========================================================================
 // Lifecycle
 // ===========================================================================
 
 app.whenReady().then(() => {
-  createWindow();
+  mainWin = createWindow();
+  // Files / deep links passed on the command line (Windows/Linux handler launch).
+  if (process.platform !== 'darwin') consumeArgv(process.argv);
+  flushPendingOpen();
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) mainWin = createWindow();
   });
 });
 

@@ -99,35 +99,82 @@
 
     <!-- Settings modal -->
     <div id="settings-modal" class="modal hidden">
-      <div class="modal-card">
+      <div class="modal-card settings-card">
         <h3>Settings</h3>
-        <label class="mini-label">Accent colour</label>
-        <div id="settings-accents" class="swatches"></div>
-        <label class="mini-label">Terminal font size — <span id="settings-font-val"></span></label>
-        <input id="settings-font" type="range" min="10" max="18" step="0.5" />
-        <label class="check-row"><input type="checkbox" id="settings-bold" /> Bold terminal text</label>
-        <label class="check-row"><input type="checkbox" id="settings-italic" /> Italic terminal text</label>
-        <label class="mini-label">Scrollback (lines kept per terminal)</label>
-        <select id="settings-scrollback">
-          <option value="1000">1,000</option>
-          <option value="5000">5,000</option>
-          <option value="10000">10,000</option>
-          <option value="50000">50,000</option>
-        </select>
-        <label class="mini-label">Appearance</label>
-        <div class="radio-row">
-          <label><input type="radio" name="theme" value="dark" /> Dark</label>
-          <label><input type="radio" name="theme" value="light" /> Light</label>
-        </div>
-        <label class="mini-label">Sessions</label>
-        <label class="check-row"><input type="checkbox" id="settings-restore" /> Reopen my tabs when I relaunch</label>
-        <label class="mini-label">Team</label>
-        <label class="check-row"><input type="checkbox" id="settings-chatcommands" /> Allow approved chat commands to run in my sessions</label>
-        <label class="mini-label">Updates</label>
-        <label class="check-row"><input type="checkbox" id="settings-autoupdate" /> Check for updates on launch</label>
-        <div class="settings-update-row">
-          <button id="settings-check-update" class="block-btn">Check for updates now</button>
-          <span id="settings-version" class="hint"></span>
+        <div class="settings-layout">
+          <div class="settings-nav">
+            <button class="settings-tab active" data-sec="appearance">Appearance</button>
+            <button class="settings-tab" data-sec="sessions">Sessions</button>
+            <button class="settings-tab" data-sec="files">Files</button>
+            <button class="settings-tab" data-sec="team">Team</button>
+            <button class="settings-tab" data-sec="updates">Updates</button>
+          </div>
+          <div class="settings-body">
+            <section class="settings-sec" data-sec="appearance">
+              <label class="mini-label">Theme</label>
+              <div id="settings-themes" class="theme-grid"></div>
+              <label class="mini-label">Accent colour</label>
+              <div id="settings-accents" class="swatches"></div>
+              <label class="mini-label">Custom colours</label>
+              <div class="custom-colors">
+                <div class="custom-color">
+                  <span>Accent</span>
+                  <input type="color" id="settings-accent-hex" />
+                  <input type="text" id="settings-accent-hexin" class="hex-in" maxlength="7" spellcheck="false" />
+                </div>
+                <div class="custom-color">
+                  <span>Background</span>
+                  <input type="color" id="settings-bg-hex" />
+                  <input type="text" id="settings-bg-hexin" class="hex-in" maxlength="7" spellcheck="false" />
+                </div>
+              </div>
+              <label class="mini-label">Terminal font size — <span id="settings-font-val"></span></label>
+              <input id="settings-font" type="range" min="10" max="18" step="0.5" />
+              <label class="check-row"><input type="checkbox" id="settings-bold" /> Bold terminal text</label>
+              <label class="check-row"><input type="checkbox" id="settings-italic" /> Italic terminal text</label>
+            </section>
+            <section class="settings-sec hidden" data-sec="sessions">
+              <label class="mini-label">Scrollback (lines kept per terminal)</label>
+              <select id="settings-scrollback">
+                <option value="1000">1,000</option>
+                <option value="5000">5,000</option>
+                <option value="10000">10,000</option>
+                <option value="50000">50,000</option>
+              </select>
+              <label class="check-row"><input type="checkbox" id="settings-restore" /> Reopen my tabs when I relaunch</label>
+            </section>
+            <section class="settings-sec hidden" data-sec="files">
+              <label class="mini-label">Default app for Markdown</label>
+              <p class="hint">Open <code>.md</code> files in Gitsidian's reader by default. Other apps can still open them via right-click → Open With.</p>
+              <div class="settings-update-row">
+                <button id="settings-md-default" class="block-btn">Make Gitsidian my Markdown app</button>
+                <span id="settings-md-status" class="hint"></span>
+              </div>
+              <label class="mini-label">Open a terminal here</label>
+              <p class="hint">Drag a folder (or a Terminal window's title-bar icon) onto Gitsidian to open a terminal there. For a shell command, add a tiny <code>gits</code> function to your shell — then run <code>gits</code> in any folder.</p>
+              <div class="settings-update-row">
+                <button id="settings-gits-cmd" class="block-btn">Copy the 'gits' shell command</button>
+                <span id="settings-gits-status" class="hint"></span>
+              </div>
+            </section>
+            <section class="settings-sec hidden" data-sec="team">
+              <label class="mini-label">Display name in chat</label>
+              <div class="settings-update-row" style="flex-direction:row;align-items:center;">
+                <input id="settings-alias" type="text" placeholder="leave blank to use your GitHub login" spellcheck="false" />
+                <button id="settings-alias-save" class="block-btn" style="flex:0 0 auto;width:auto;">Save</button>
+              </div>
+              <p class="hint" id="settings-alias-hint">Your GitHub account stays the underlying identity; this is just the name teammates see. Set your avatar from the chat header.</p>
+              <label class="mini-label">Safety</label>
+              <label class="check-row"><input type="checkbox" id="settings-chatcommands" /> Allow approved chat commands to run in my sessions</label>
+            </section>
+            <section class="settings-sec hidden" data-sec="updates">
+              <label class="check-row"><input type="checkbox" id="settings-autoupdate" /> Check for updates on launch</label>
+              <div class="settings-update-row">
+                <button id="settings-check-update" class="block-btn">Check for updates now</button>
+                <span id="settings-version" class="hint"></span>
+              </div>
+            </section>
+          </div>
         </div>
         <div class="modal-actions">
           <button id="settings-close" class="block-btn primary">Done</button>

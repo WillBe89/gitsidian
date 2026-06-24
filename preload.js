@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('gits', {
 
   // File move (drag-and-drop in the tree) + file-change watching
   moveEntry: (opts) => ipcRenderer.invoke('fs:move', opts),
+  pasteEntry: (opts) => ipcRenderer.invoke('fs:paste', opts),
+  pickFolder: (title) => ipcRenderer.invoke('fs:pickFolder', title),
   watchAdd: (p) => ipcRenderer.invoke('watch:add', p),
   watchRemove: (p) => ipcRenderer.invoke('watch:remove', p),
   onFileChanged: (cb) => ipcRenderer.on('file:changed', (_e, payload) => cb(payload)),
@@ -80,15 +82,26 @@ contextBridge.exposeInMainWorld('gits', {
   chatList: (opts) => ipcRenderer.invoke('team:chatList', opts),
   chatCache: (opts) => ipcRenderer.invoke('team:chatCache', opts),
   chatPost: (opts) => ipcRenderer.invoke('team:chatPost', opts),
+  chatDelete: (opts) => ipcRenderer.invoke('team:chatDelete', opts),
+  chatDeleteChannel: (opts) => ipcRenderer.invoke('team:channelDelete', opts),
+  chatExportMd: (opts) => ipcRenderer.invoke('chat:exportMd', opts),
   teamInvite: (opts) => ipcRenderer.invoke('team:invite', opts),
+  teamProfiles: (repo) => ipcRenderer.invoke('team:profiles', repo),
+  teamPickImage: () => ipcRenderer.invoke('team:pickImage'),
+  teamSetProfile: (opts) => ipcRenderer.invoke('team:setProfile', opts),
 
   // Auto-update
   appVersion: () => ipcRenderer.invoke('app:version'),
+  copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: (asset, version) => ipcRenderer.invoke('update:download', asset, version),
   installUpdate: (filePath) => ipcRenderer.invoke('update:install', filePath),
   onUpdateProgress: (cb) => ipcRenderer.on('update:progress', (_e, payload) => cb(payload)),
   quitApp: () => ipcRenderer.invoke('app:quit'),
+  onOpenItem: (cb) => ipcRenderer.on('open-external-item', (_e, item) => cb(item)),
+  pathKinds: (paths) => ipcRenderer.invoke('path:kinds', paths),
+  markdownDefaultInfo: () => ipcRenderer.invoke('app:markdownDefaultInfo'),
+  setMarkdownDefault: () => ipcRenderer.invoke('app:setMarkdownDefault'),
   pendingUpdateCleanup: () => ipcRenderer.invoke('update:pendingCleanup'),
   deleteUpdateFile: (p) => ipcRenderer.invoke('update:deleteFile', p),
 

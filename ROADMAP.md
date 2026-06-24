@@ -4,28 +4,26 @@ Ideas for future releases — roughly in priority order, not firm commitments.
 Suggestions and contributions welcome; sponsorship helps fund the signing/notarization
 that removes the OS security prompts (see the README's **Support** section).
 
-## 0.7 — the next big themes
+## 0.8 — the next big themes
 
-### Total file management in the sidebar
-Turn the file tree into a proper file manager — manage projects without the Finder
-or a terminal. *(Today: create / rename / delete-to-Trash / drag-to-move already work.)*
+### Be the default, everywhere
+0.7 made Gitsidian openable as a Markdown app and a terminal-anywhere target.
+Next, make that seamless and broader.
 
-- **New folder / new file** from a right-click anywhere in the tree.
-- **Copy, Cut, Paste, Duplicate, and "Move to…"** via right-click — not just drag.
-- **Multi-select** files/folders for bulk move, copy, or delete.
-- Drag files **between projects**, and into folders, with clear drop targets.
+- **More default file types** — offer to handle other text/code types you open
+  often (JSON, YAML, logs), not just Markdown.
+- **Multi-select in the tree** — bulk move / copy / delete across files & folders,
+  and drag **between projects** with clear drop targets.
+- **"Run here" hand-off** — when you drag a project folder in, detect a
+  `package.json` / common task and offer a one-click "run `npm start` here" so
+  picking up from another terminal is a single click.
+- **Reopen-at-folder polish** — remember the last command per folder.
 
 ### Advanced team chat
 Make chat feel like a real chat app, not just issue comments.
 
-- **Display name / alias** — choose the name you appear as in Gitsidian while your
-  **GitHub account stays the underlying auth**. An alias per GitHub login (or a
-  fresh alias per account), shared via the team's hub repo so everyone sees the
-  same names.
-- **Custom avatar** — override the GitHub avatar with your own image.
-- **Rich compose toolbar** — Slack-style formatting buttons (bold, italic, code,
-  lists, links) on top of the markdown chat already renders.
 - **Reactions, threads, and per-channel unread counts.**
+- **Edit a sent message** in place (today: delete + repost).
 - *(Real-time delivery + presence need a relay server — see 1.0.)*
 
 ## 1.0 — when it's signed
@@ -50,6 +48,14 @@ Make chat feel like a real chat app, not just issue comments.
   (`.rpm`, system tray icon).
 
 ## Shipped recently
+
+**0.7.0:** opens your **Markdown files** (set Gitsidian as the default `.md` app) ·
+**open a terminal anywhere** (drag a folder / Terminal proxy icon, `gits` command,
+`gitsidian://` URL scheme) · **full file management** (copy/cut/paste/duplicate/
+move-to + drag) · **polished chat composer** (SVG toolbar, lists auto-continue,
+working blockquotes/strikethrough) · **copy/delete messages, delete channel with
+.md backup**, alias + custom avatar · **sectioned Settings + theme picker** with
+seven themes and fully custom accent/background colours.
 
 **0.6.2:** split-picker fix + shift/right-click to split any two tabs · resizable
 message box · SVG lightning-bolt dispatch icon · markdown release notes + improved
