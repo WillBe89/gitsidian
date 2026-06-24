@@ -417,6 +417,12 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 }
 .terminals.grouped .term-pane.grid-cell.focused::before { border-color: var(--accent); }
 .new-tab.group-toggle.on { color: var(--accent-2); border-color: var(--accent-2); }
+/* Draggable dividers between quadrant cells. */
+.grid-divider { position: absolute; z-index: 7; }
+.grid-divider.hidden { display: none; }
+.grid-divider-v { top: 0; width: 8px; margin-left: -4px; cursor: col-resize; }
+.grid-divider-h { left: 0; width: 100%; height: 8px; margin-top: -4px; cursor: row-resize; }
+.grid-divider:hover, .grid-divider.dragging { background: var(--accent); }
 /* Cell overlay: label + close; click to focus. */
 .cell-tag { position: absolute; top: 4px; right: 6px; z-index: 6; display: flex; align-items: center; gap: 6px;
   background: var(--panel-3); color: var(--muted); border: 1px solid var(--line); border-radius: 7px;
@@ -433,11 +439,17 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .group-chip { display: flex; align-items: center; gap: 7px; padding: 7px 8px 7px 11px; border-radius: 8px 8px 0 0;
   background: var(--panel); border: 1px solid var(--line); border-bottom: none; cursor: pointer; white-space: nowrap; color: var(--muted); }
 .group-chip.active { background: var(--panel-2); color: var(--text); }
+.group-chip-caret { font-size: 9px; color: var(--muted); width: 10px; text-align: center; cursor: pointer; }
+.group-chip-caret:hover { color: var(--text); }
 .group-chip-icon { display: flex; color: var(--accent-2); }
 .group-chip-icon svg { display: block; }
 .group-chip-name { font-size: 12.5px; font-weight: 600; max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
 .group-chip-count { font-size: 10px; background: var(--panel-3); border-radius: 8px; padding: 1px 6px; min-width: 16px; text-align: center; }
+.group-chip-dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); flex: 0 0 7px; }
+.group-chip.has-unread .group-chip-dot { display: block; }
 .group-chip-close { font-size: 14px; }
+/* Member tabs shown inline when their group is expanded. */
+.tab.in-group { box-shadow: inset 2px 0 0 var(--accent-2); }
 .tabbar.selecting .tab { opacity: 0.55; }
 .tabbar.selecting .tab.selected { opacity: 1; box-shadow: inset 0 0 0 2px var(--accent); }
 .select-bar { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 130;

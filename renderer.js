@@ -1384,6 +1384,7 @@ function activate(id) {
     s.unread = false; if (s.tabEl) s.tabEl.classList.remove('unread');
     if (s.kind === 'chat' && !teamAdding) markSeen(); // clear the unread badge when you look at chat
     focusSession(s);
+    refreshGroupBadges();
   }
 }
 
@@ -1439,9 +1440,10 @@ function applyLayout() {
   if (group) {
     terminalsEl.classList.add('grouped');
     const n = members.length;
+    const cols = group.cols ?? 50, rows = group.rows ?? 50;
     terminalsEl.dataset.count = String(n);
-    terminalsEl.style.gridTemplateColumns = '1fr 1fr';
-    terminalsEl.style.gridTemplateRows = n <= 2 ? '1fr' : '1fr 1fr';
+    terminalsEl.style.gridTemplateColumns = `${cols}% ${100 - cols}%`;
+    terminalsEl.style.gridTemplateRows = n <= 2 ? '1fr' : `${rows}% ${100 - rows}%`;
     members.forEach((id, i) => {
       const s = sessions.get(id);
       s.pane.classList.add('grid-cell');
@@ -1451,19 +1453,36 @@ function applyLayout() {
       if (id === activeId) s.pane.classList.add('focused');
       refreshPane(s);
     });
+    positionDividers(group, n);
   } else {
+    positionDividers(null);
     const s = sessions.get(activeId);
     if (s) { s.pane.classList.add('active'); refreshPane(s); }
   }
   updateTabActive();
   renderGroupChips();
+  refreshGroupBadges();
+}
+
+// Draggable dividers between grid cells (resize X / Y inside the quadrant).
+function positionDividers(group, n) {
+  if (!group) { gridVDivider.classList.add('hidden'); gridHDivider.classList.add('hidden'); return; }
+  const cols = group.cols ?? 50, rows = group.rows ?? 50;
+  gridVDivider.classList.remove('hidden');
+  gridVDivider.style.left = cols + '%';
+  gridVDivider.style.height = (n === 3 ? rows + '%' : '100%'); // 3-pane: bottom spans, so only top row
+  if (n >= 3) { gridHDivider.classList.remove('hidden'); gridHDivider.style.top = rows + '%'; }
+  else gridHDivider.classList.add('hidden');
 }
 
 function updateTabActive() {
   for (const [sid, s] of sessions) {
     if (!s.tabEl) continue;
-    s.tabEl.classList.toggle('hidden', !!groupOf(sid)); // grouped tabs live inside the chip
-    s.tabEl.classList.toggle('active', !activeGroupId && sid === activeId);
+    const g = groupOf(sid);
+    // Grouped tabs hide inside the chip unless the group is expanded.
+    s.tabEl.classList.toggle('hidden', !!g && !g.expanded);
+    s.tabEl.classList.toggle('in-group', !!g);
+    s.tabEl.classList.toggle('active', sid === activeId && (!activeGroupId || (g && g.id === activeGroupId)));
   }
   for (const [gid, chip] of groupChipEls) chip.classList.toggle('active', gid === activeGroupId);
 }
@@ -1542,7 +1561,7 @@ async function confirmGroup() {
   exitSelectMode();
 }
 function createGroup(ids, name) {
-  const g = { id: `tg${++paneGroupSeq}`, name, members: ids.slice(0, MAX_GROUP) };
+  const g = { id: `tg${++paneGroupSeq}`, name, members: ids.slice(0, MAX_GROUP), cols: 50, rows: 50, expanded: false };
   groups.push(g);
   activeGroupId = g.id;
   activeId = g.members[0];
@@ -1607,18 +1626,24 @@ function renderGroupChips() {
     let chip = groupChipEls.get(g.id);
     if (!chip) {
       chip = el('div', { class: 'group-chip' },
+        el('span', { class: 'group-chip-caret', title: 'Show/hide this group’s tabs' }),
         el('span', { class: 'group-chip-icon', html: GRID_SVG }),
         el('span', { class: 'group-chip-name' }),
         el('span', { class: 'group-chip-count' }),
+        el('span', { class: 'group-chip-dot' }),
         el('span', { class: 'tab-close group-chip-close', text: '×', title: 'Ungroup (keeps the tabs)' }));
       chip.addEventListener('click', (e) => {
         if (e.target.classList.contains('group-chip-close')) { ungroup(g.id); return; }
+        if (e.target.classList.contains('group-chip-caret')) { // toggle showing member tabs
+          e.stopPropagation(); g.expanded = !g.expanded; updateTabActive(); renderGroupChips(); return;
+        }
         activateGroup(g.id);
       });
       chip.addEventListener('dblclick', (e) => { e.stopPropagation(); renameGroup(g.id); });
       chip.addEventListener('contextmenu', (e) => {
         e.preventDefault(); e.stopPropagation();
         showContextMenu(e.clientX, e.clientY, [
+          { label: g.expanded ? 'Collapse group tabs' : 'Expand group tabs', onClick: () => { g.expanded = !g.expanded; updateTabActive(); renderGroupChips(); } },
           { label: 'Rename group…', onClick: () => renameGroup(g.id) },
           { label: 'Ungroup (keep tabs)', onClick: () => ungroup(g.id) },
         ]);
@@ -1628,8 +1653,19 @@ function renderGroupChips() {
     }
     chip.querySelector('.group-chip-name').textContent = g.name;
     chip.querySelector('.group-chip-count').textContent = String(n);
+    chip.querySelector('.group-chip-caret').textContent = g.expanded ? '▾' : '▸';
     chip.classList.toggle('active', g.id === activeGroupId);
+    chip.classList.toggle('expanded', !!g.expanded);
+    // When expanded, line the member tabs up right after their chip.
+    if (g.expanded) {
+      let anchor = chip;
+      for (const id of g.members) {
+        const s = sessions.get(id);
+        if (s && s.tabEl) { tabbar.insertBefore(s.tabEl, anchor.nextSibling); anchor = s.tabEl; }
+      }
+    }
   }
+  refreshGroupBadges();
 }
 // Right-click menu for an individual tab (grouping actions).
 function tabMenuItems(session) {
@@ -2527,6 +2563,11 @@ async function teamFetch({ initial = false } = {}) {
     refreshChatBadge();
     const incoming = fresh.filter((m) => m.login !== teamMe);
     if (!initial && incoming.length) notifyChat(incoming[incoming.length - 1]);
+    // If the chat lives in a group and isn't the focused cell, light its chip.
+    const chatS = teamChatId && sessions.get(teamChatId);
+    if (chatS && incoming.length && !(activeId === teamChatId && activeGroupId)) {
+      chatS.unread = true; refreshGroupBadges();
+    }
   }
 }
 
@@ -2946,7 +2987,7 @@ window.gits.onPtyData(({ id, data }) => {
   const s = sessions.get(id);
   if (!s) return;
   s.term.write(data);
-  if (id !== activeId) { s.unread = true; s.tabEl.classList.add('unread'); }
+  if (id !== activeId) { s.unread = true; s.tabEl.classList.add('unread'); refreshGroupBadges(); }
 });
 
 window.gits.onPtyStatus(({ id, busy, alive }) => {
@@ -3127,7 +3168,46 @@ sidebarResizer.addEventListener('mousedown', (e) => {
   });
 });
 
-// (Group/quadrant layout replaced the single draggable split divider in 0.7.1.)
+// Draggable dividers between quadrant cells (X = columns, Y = rows).
+const gridVDivider = el('div', { class: 'grid-divider grid-divider-v hidden', title: 'Drag to resize' });
+const gridHDivider = el('div', { class: 'grid-divider grid-divider-h hidden', title: 'Drag to resize' });
+terminalsEl.appendChild(gridVDivider);
+terminalsEl.appendChild(gridHDivider);
+function setupGridDivider(divEl, axis) {
+  divEl.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const g = activeGroupId ? groups.find((x) => x.id === activeGroupId) : null;
+    if (!g) return;
+    const rect = terminalsEl.getBoundingClientRect();
+    startDrag(divEl, (ev) => {
+      if (axis === 'x') g.cols = Math.max(15, Math.min(85, ((ev.clientX - rect.left) / rect.width) * 100));
+      else g.rows = Math.max(15, Math.min(85, ((ev.clientY - rect.top) / rect.height) * 100));
+      const n = g.members.filter((id) => sessions.has(id)).length;
+      const cols = g.cols ?? 50, rows = g.rows ?? 50;
+      terminalsEl.style.gridTemplateColumns = `${cols}% ${100 - cols}%`;
+      terminalsEl.style.gridTemplateRows = n <= 2 ? '1fr' : `${rows}% ${100 - rows}%`;
+      positionDividers(g, n);
+      refitTerminals();
+    });
+  });
+}
+setupGridDivider(gridVDivider, 'x');
+setupGridDivider(gridHDivider, 'y');
+
+// Light up a group chip when one of its (unfocused) members has new activity.
+function refreshGroupBadges() {
+  for (const [gid, chip] of groupChipEls) {
+    const g = groups.find((x) => x.id === gid);
+    if (!g) continue;
+    const hot = g.members.some((id) => {
+      const s = sessions.get(id);
+      if (!s) return false;
+      if (gid === activeGroupId && id === activeId) return false; // you're looking at it
+      return !!s.unread;
+    });
+    chip.classList.toggle('has-unread', hot);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Sidebar buttons + modal
