@@ -25,11 +25,16 @@ drag-to-group/ungroup, drag-arrange quadrants, resizable dividers, activity dots
 compact tabs, and **persistence across relaunch**). Still to do:
 
 - **Keyboard focus-switching** between cells + a "maximise this cell" toggle.
-- **Multiple live chats** — a chat can be a cell today, but only one chat session
-  exists; allow several at once (per-session chat state refactor). This unlocks the
-  "master user: one group per team, each with its own chat" workflow.
 - **Save / load named workspaces** — snapshot a whole set of groups + tabs and
   switch between them (e.g. "Client A", "Personal").
+
+### Chat as a collapsible side panel
+Decided direction (instead of multiple chat panes): dock chat to a **collapsible
+right-hand rail** with the channel switcher inside — the standard Slack/VS-Code
+pattern. Reuses the existing single chat instance (no per-session refactor) and
+keeps chat out of the precious quadrant cells. A **Settings option** chooses how it
+opens: **push** (shrink the main area) or **overlay** (float over the right edge);
+default push on wide windows, overlay on narrow.
 
 ### Advanced team chat
 Make chat feel like a real chat app, not just issue comments.
@@ -45,6 +50,36 @@ to the **system language**, with a **language picker in Settings** as an overrid
 Step one is a string-extraction pass across `renderer.js` / `index.html`;
 translations (human or machine, per language) follow. A meaningful effort, kept
 lower priority than signing while the audience is mostly English-speaking devs.
+
+## Agent orchestration — the big direction
+Turn Gitsidian into a **model-agnostic control plane for multi-agent setups**
+(hub-and-spoke and beyond). The edge: it orchestrates at the **process/file layer** —
+driving whatever AI *CLI* the user already has (Claude Code, Codex, Gemini, Aider,
+Ollama, …) as real terminals — so it's model-agnostic by construction, works with
+local *and* cloud models, and needs no API keys or per-model SDKs.
+
+**Mechanisms (model-agnostic):**
+- **File handoff** — agents write outputs to `.gitsidian/agents/<role>.out.md`;
+  Gitsidian's file-watcher routes them. Shared context in `.gitsidian/context.md`,
+  errors in `.gitsidian/errors.md`. Git-native and inspectable.
+- **Headless task calls** — use CLIs' print modes (`claude -p`, `aider --message`,
+  `ollama run`) for automated steps with cleanly captured output.
+
+**Phasing (decided: human-in-the-loop first):**
+1. **Interactive (next up):** role labels on panes (Coordinator / Research / Writer /
+   Reviewer / custom), **"send output → [agent]" routing** between your own panes, and
+   shared-context files in `.gitsidian/`. You watch the quadrant and approve handoffs.
+   Builds directly on groups + the existing AI-command dispatch.
+2. **Declarative pipelines:** a `.gitsidian/topology.yml` (nodes = role+CLI+prompt,
+   edges = route-on-done) + a runner that fans out and collects via file-handoff.
+3. **AI coordinator:** a coordinator agent routes tasks to subagents dynamically —
+   full hub-and-spoke.
+
+**Product shape:** a *topology* = a saved, shareable agent setup (roles + CLIs +
+prompts + routing + layout); a quadrant group is its visual form. Ship starter
+**templates** (plan→code→test→review, research→write→review) + per-agent
+**observability** (status, errors routed to the coordinator). This is the natural
+**commercial / premium core** under the PolyForm Noncommercial license.
 
 ## 1.0 — when it's signed
 
