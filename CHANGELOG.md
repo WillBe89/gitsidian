@@ -2,6 +2,29 @@
 
 All notable changes to Gitsidian.
 
+## 0.7.2 — 2026-06-24
+
+Quadrant groups, polished into a real cockpit.
+
+- **Build a group by selecting tabs** — **Shift-click** tabs to hold 2–4 (a
+  selection, highlighted, not a group yet), then **right-click → Create group**,
+  click the **grid button**, or **drag the held tabs together**. The group chip
+  lands on the left of the strip.
+- **Collapse truly hides** — a group's member tabs tuck away under its chip;
+  click the chip's **grid icon** to expand/collapse them. (Fixes a bug where the
+  tabs stayed visible.)
+- **Arrange the quadrants by dragging** — drag a **tab into a quadrant** to place
+  it there, or drag a **cell's label onto another cell** to swap. Drag a tab onto
+  another tab's centre to group them, onto a group chip to add it, or onto empty
+  strip space to pull it out of its group.
+- **Resize the quadrants** — draggable **X and Y dividers** between cells.
+- **Reorder tabs** by dragging them in the strip (⌘1–9 and restore follow the new
+  order).
+- **Group activity dot** — a chip lights up when one of its unfocused members has
+  new output or a new chat message.
+- **Compact tabs** — independently **hide tab names** and/or **hide the type tags**
+  (Terminal / Claude / …) under Settings → Appearance, to shrink the strip.
+
 ## 0.7.1 — 2026-06-24
 
 - **Quadrant tab groups** — select **2–4 open tabs** and group them into a grid

@@ -19,15 +19,15 @@ Next, make that seamless and broader.
   picking up from another terminal is a single click.
 - **Reopen-at-folder polish** — remember the last command per folder.
 
-### Quadrant groups — polish (shipped in 0.7.1)
-The 2×2 quadrant grouping landed in 0.7.1. Still to refine:
+### Quadrant groups — remaining polish
+Quadrant grouping landed in 0.7.1 and was polished hard in 0.7.2 (shift-click to
+select → create, collapse-to-hide, drag-to-group/ungroup, drag-arrange quadrants,
+resizable X/Y dividers, activity dots, compact tabs). Still to do:
 
-- **Resizable dividers** between cells (cells are equal-split for now).
-- **Drag a tab directly into a quadrant** (today: select / shift-click / menu).
-- **Persist groups across relaunch** and add keyboard focus-switching + a
-  "maximise this cell" toggle.
+- **Persist groups across relaunch** (groups are runtime-only today).
+- **Keyboard focus-switching** between cells + a "maximise this cell" toggle.
 - **Multiple live chats** — a chat can be a cell today, but only one chat session
-  exists; allow several at once.
+  exists; allow several at once (per-session chat state refactor).
 
 ### Advanced team chat
 Make chat feel like a real chat app, not just issue comments.
@@ -58,6 +58,11 @@ Make chat feel like a real chat app, not just issue comments.
   (`.rpm`, system tray icon).
 
 ## Shipped recently
+
+**0.7.2:** quadrant groups polished — shift-click to select then create a group ·
+collapse truly hides a group's tabs · drag-arrange quadrants (tab→quadrant, label
+swap) · resizable X/Y cell dividers · drag-to-group / drag-out-to-ungroup · group
+activity dots · drag-to-reorder tabs · compact tabs (hide names and/or type tags).
 
 **0.7.1:** **quadrant tab groups** — group 2–4 tabs into a side-by-side / 2×2 grid,
 multiple groups at once (24-tab cap still applies), any tab type per cell including
