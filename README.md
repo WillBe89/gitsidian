@@ -172,7 +172,7 @@ See **[ROADMAP.md](ROADMAP.md)** for what's planned. Near-term: multi-file searc
 refinements, more editor languages and format-on-save, conflict help for pulls, and
 real-time team collaboration. The biggest one is full **code signing & notarization**
 (the build is wired for it; it just needs a paid Apple Developer ID) to remove the
-first-launch security prompt — see **Support** above.
+first-launch security prompt — see **Support**.
 
 ## Support
 
