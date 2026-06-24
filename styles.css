@@ -438,7 +438,7 @@ body.tabs-no-name .tab, body.tabs-no-tag .tab { padding: 7px 8px; }
 .grid-divider-h { left: 0; width: 100%; height: 8px; margin-top: -4px; cursor: row-resize; }
 .grid-divider:hover, .grid-divider.dragging { background: var(--accent); }
 /* Cell overlay: label + close; click to focus. */
-.cell-tag { position: absolute; top: 4px; right: 6px; z-index: 6; display: flex; align-items: center; gap: 6px;
+.cell-tag { position: absolute; top: 4px; right: 22px; z-index: 6; display: flex; align-items: center; gap: 6px;
   background: var(--panel-3); color: var(--muted); border: 1px solid var(--line); border-radius: 7px;
   padding: 2px 7px; font-size: 11px; max-width: 70%; cursor: pointer; }
 .cell-tag.hidden { display: none; }
@@ -485,6 +485,18 @@ body.tabs-no-name .tab, body.tabs-no-tag .tab { padding: 7px 8px; }
 /* Padding goes on .xterm (not the host) so FitAddon subtracts it — otherwise the
    columns over-fill and rows bleed under the scrollbar / over the top edge. */
 .term-host .xterm { padding: 8px 10px 4px; }
+/* Quiet scrollbar: a reserved 12px gutter (so columns never overlap it), but the
+   thumb is invisible until you hover the pane / scroll inside it. */
+.term-host .xterm-viewport::-webkit-scrollbar { width: 12px; }
+.term-host .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+.term-host .xterm-viewport::-webkit-scrollbar-thumb {
+  background: transparent; border-radius: 8px;
+  border: 3px solid transparent; background-clip: padding-box;
+  transition: background 0.15s;
+}
+.term-host:hover .xterm-viewport::-webkit-scrollbar-thumb,
+.term-host .xterm-viewport:hover::-webkit-scrollbar-thumb { background: var(--line); background-clip: padding-box; }
+.term-host .xterm-viewport:hover::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: padding-box; }
 .term-host.term-italic .xterm-rows, .term-host.term-italic .xterm-rows span { font-style: italic; }
 
 /* Friendly composer bar -------------------------------------------------- */

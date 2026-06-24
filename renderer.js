@@ -48,6 +48,7 @@ const selectedIds = new Set(); // tabs held via shift-click (a selection, not a 
 const groupChipEls = new Map(); // groupId -> chip element
 let tabDragId = null;       // session id being drag-reordered in the strip
 let cellDragId = null;      // session id being dragged between quadrant cells
+let chipDragId = null;      // group id being drag-reordered in the strip
 const MAX_GROUP = 4;
 // Where each member sits in the grid, by member count then index (CSS grid-area).
 const GRID_AREAS = {
@@ -1755,10 +1756,34 @@ function renderGroupChips() {
         activateGroup(g.id); // body = open the quadrant grid
       });
       chip.addEventListener('dblclick', (e) => { e.stopPropagation(); renameGroup(g.id); });
-      // Drag a tab onto a group chip → add it to that group.
-      chip.addEventListener('dragover', (e) => { if (tabDragId && !g.members.includes(tabDragId)) { e.preventDefault(); clearTabDropMarks(); chip.classList.add('chip-drop'); } });
-      chip.addEventListener('dragleave', () => chip.classList.remove('chip-drop'));
+      // Drag the chip itself → reorder groups in the strip.
+      chip.draggable = true;
+      chip.addEventListener('dragstart', (e) => {
+        chipDragId = g.id; e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', 'chip:' + g.id); } catch {}
+        chip.classList.add('tab-dragging');
+      });
+      chip.addEventListener('dragend', () => { chipDragId = null; chip.classList.remove('tab-dragging'); clearTabDropMarks(); });
+      // Accept either a dragged tab (add to group) or another chip (reorder groups).
+      chip.addEventListener('dragover', (e) => {
+        if (chipDragId && chipDragId !== g.id) {
+          e.preventDefault(); clearTabDropMarks();
+          const r = chip.getBoundingClientRect();
+          chip.classList.add(e.clientX > r.left + r.width / 2 ? 'drop-after' : 'drop-before');
+        } else if (tabDragId && !g.members.includes(tabDragId)) {
+          e.preventDefault(); clearTabDropMarks(); chip.classList.add('chip-drop');
+        }
+      });
+      chip.addEventListener('dragleave', () => chip.classList.remove('chip-drop', 'drop-before', 'drop-after'));
       chip.addEventListener('drop', (e) => {
+        if (chipDragId && chipDragId !== g.id) {
+          e.preventDefault(); e.stopPropagation();
+          const r = chip.getBoundingClientRect();
+          const after = e.clientX > r.left + r.width / 2;
+          const dragged = chipDragId; chipDragId = null; clearTabDropMarks();
+          reorderGroup(dragged, g.id, after);
+          return;
+        }
         if (!tabDragId) return;
         e.preventDefault(); e.stopPropagation();
         if (selectionDragging()) { tabDragId = null; clearTabDropMarks(); createGroupFromSelection(); return; }
@@ -1795,6 +1820,17 @@ function layoutTabStrip() {
   }
   for (const [id, s] of sessions) { if (s.tabEl && !groupOf(id)) tabbar.appendChild(s.tabEl); }
   appendTabControls();
+}
+// Move a group before/after another in the strip order.
+function reorderGroup(draggedGid, targetGid, after) {
+  if (draggedGid === targetGid) return;
+  const di = groups.findIndex((g) => g.id === draggedGid);
+  if (di < 0) return;
+  const [g] = groups.splice(di, 1);
+  const ti = groups.findIndex((x) => x.id === targetGid);
+  if (ti < 0) groups.push(g); else groups.splice(after ? ti + 1 : ti, 0, g);
+  renderGroupChips();
+  persistSession();
 }
 // Right-click menu for an individual tab (grouping actions).
 function tabMenuItems(session) {
