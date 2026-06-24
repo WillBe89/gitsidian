@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('gits', {
   renameEntry: (opts) => ipcRenderer.invoke('fs:rename', opts),
   deleteEntry: (p) => ipcRenderer.invoke('fs:delete', p),
   saveImage: (opts) => ipcRenderer.invoke('fs:saveImage', opts),
+  rolesEnsure: (opts) => ipcRenderer.invoke('roles:ensure', opts),
+  rolesList: (opts) => ipcRenderer.invoke('roles:list', opts),
+  roleGet: (opts) => ipcRenderer.invoke('roles:get', opts),
 
   // Git: diff / branches / AI commit message
   diff: (opts) => ipcRenderer.invoke('git:diff', opts),

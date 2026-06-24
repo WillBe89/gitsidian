@@ -1511,10 +1511,56 @@ function setRole(s, role) {
   persistSession();
 }
 function pickRoleMenu(x, y, s) {
-  const items = ROLE_PRESETS.map((r) => ({ label: s.role === r ? `• ${r}` : r, onClick: () => setRole(s, r) }));
-  items.push({ label: 'Custom…', onClick: async () => { const v = await uiPrompt('Role for this agent:', s.role || ''); if (v !== null) setRole(s, v.trim() || null); } });
+  const items = ROLE_PRESETS.map((r) => ({ label: s.role === r ? `• ${r}` : r, onClick: () => assignRole(s, r) }));
+  items.push({ label: 'Custom…', onClick: async () => { const v = await uiPrompt('Role for this agent:', s.role || ''); if (v !== null) assignRole(s, v.trim() || null); } });
   if (s.role) items.push({ label: 'Clear role', onClick: () => setRole(s, null) });
   showContextMenu(x, y, items);
+}
+// Resolve the project root that owns a session (for its .gitsidian/roles/ files).
+function sessionRoot(s) {
+  const roots = [...projectIndex.keys()];
+  const under = (p) => roots.find((r) => p === r || p.startsWith(r + '/'));
+  if (!s) return roots[0] || null;
+  if (s.repo) return s.repo;
+  if (s.cwd) return under(s.cwd) || s.cwd;
+  return roots[0] || null;
+}
+// Assign a role to an agent pane and wire its prompt: look for the role's .md in
+// the project; if none exist yet, offer to create the standard set; then label
+// the tab and stage the role's prompt in its composer (the agent's briefing).
+async function assignRole(s, role) {
+  if (!s) return;
+  if (!role) { setRole(s, null); return; }
+  const root = sessionRoot(s);
+  let body = null;
+  if (root) {
+    let r = await window.gits.roleGet({ root, name: role });
+    if (r && r.ok && !r.exists && ROLE_PRESETS.includes(role)) {
+      const make = confirm(`No agent-role files exist in this project yet.\n\nCreate the standard roles (${ROLE_PRESETS.join(', ')}) as editable Markdown files in .gitsidian/roles/?\n\nYou can edit them anytime to change each role's instructions.`);
+      if (make) {
+        const er = await window.gits.rolesEnsure({ root });
+        if (er && er.ok) { showToast(`Created role files in .gitsidian/roles/`); r = await window.gits.roleGet({ root, name: role }); }
+        else showToast((er && er.error) || 'Could not create role files.');
+      }
+    }
+    if (r && r.ok && r.exists) body = r.body;
+  }
+  setRole(s, role);
+  if (body && s.composerInsert) {
+    s.composerInsert(`${body.trim()}\n`);
+    activate(s.id);
+    if (s.composerText) s.composerText.focus();
+    showToast(`Role "${role}" assigned — prompt staged in the composer; press Send to brief the agent.`);
+  } else {
+    showToast(`Role set: ${role}`);
+  }
+}
+// Scaffold the standard role files into a project (used by the command palette).
+async function setupRolesForProject(root) {
+  if (!root) { showToast('Open a project first.'); return; }
+  const er = await window.gits.rolesEnsure({ root });
+  if (!er || !er.ok) { showToast((er && er.error) || 'Could not create role files.'); return; }
+  showToast(er.created.length ? `Created ${er.created.length} role files in .gitsidian/roles/` : 'Role files already exist in .gitsidian/roles/');
 }
 // Route selected text from one agent into another agent's composer (they review + send).
 function routeText(src, target, text) {
@@ -4350,6 +4396,7 @@ function paletteActions() {
     { label: 'New terminal here', run: () => openSession(paletteRoot || undefined, proj ? proj.name : 'terminal') },
     { label: 'Search in project…', run: () => openSearch(paletteRoot) },
     { label: 'Team chat', run: () => openChatRail() },
+    { label: proj ? `Set up agent roles — ${proj.name}` : 'Set up agent roles in this project', run: () => setupRolesForProject(paletteRoot) },
     { label: 'Settings…', run: () => document.getElementById('open-settings').click() },
     { label: `Switch to ${settings.theme === 'light' ? 'dark' : 'light'} theme`, run: () => { settings.theme = settings.theme === 'light' ? 'dark' : 'light'; saveSettings(); applyTheme(); } },
     { label: 'Check for updates', run: () => checkForUpdates({ silent: false }) },
