@@ -1346,6 +1346,19 @@ async function openSession(cwd, label, aiOverride) {
     status: 'busy', unread: false, tabEl: null,
   };
   sessions.set(id, session);
+  // Right-click selected terminal text → route it into another agent's composer.
+  host.addEventListener('contextmenu', (e) => {
+    if (!term.hasSelection()) return;
+    const text = term.getSelection();
+    if (!text || !text.trim()) return;
+    const targets = [...sessions.values()].filter((t) => t.id !== id && t.composerInsert);
+    if (!targets.length) return;
+    e.preventDefault();
+    showContextMenu(e.clientX, e.clientY, targets.map((t) => ({
+      label: `Send selection → ${roleLabel(t)}`,
+      onClick: () => routeText(session, t, text),
+    })));
+  });
   // Keep xterm's rows/viewport in sync with the real visible area whenever it
   // changes (tab shown, composer grows, split/sidebar drag, fonts settle). Fixes
   // the "can't scroll to the very bottom until you press Down" dimension desync.
@@ -1374,6 +1387,7 @@ function attachTab(session, { tag, tagClass = 'tab-ai', tabTitle = '' } = {}) {
   const tab = el('div', { class: `tab${session.kind !== 'term' ? ' ' + session.kind : ''}`, 'data-id': session.id, title: tabTitle },
     el('span', { class: 'tab-status' }),
     el('span', { class: 'tab-title', text: session.label }),
+    el('span', { class: `tab-role${session.role ? '' : ' hidden'}`, text: session.role || '' }),
     el('span', { class: tagClass, text: tag }),
     el('span', { class: 'tab-close', text: '×' })
   );
@@ -1461,6 +1475,35 @@ function syncSessionsOrder() {
 
 function shortAi(name) {
   return name.replace(' Code', '').replace(' (OpenAI)', '').replace(' CLI', '').replace(' (shell)', '');
+}
+
+// --- Agent orchestration (human-in-the-loop) ---------------------------------
+// Assign a role to a session and route one agent's output into another's input.
+const ROLE_PRESETS = ['Coordinator', 'Research', 'Writer', 'Reviewer', 'Tester', 'Planner'];
+const roleLabel = (s) => (s && (s.role || s.label)) || 'agent';
+function setRole(s, role) {
+  if (!s) return;
+  s.role = role || null;
+  if (s.tabEl) {
+    const chip = s.tabEl.querySelector('.tab-role');
+    if (chip) { chip.textContent = s.role || ''; chip.classList.toggle('hidden', !s.role); }
+  }
+  if (s.cellTag) { const lbl = s.cellTag.querySelector('.cell-tag-label'); if (lbl) lbl.textContent = roleLabel(s); }
+  persistSession();
+}
+function pickRoleMenu(x, y, s) {
+  const items = ROLE_PRESETS.map((r) => ({ label: s.role === r ? `• ${r}` : r, onClick: () => setRole(s, r) }));
+  items.push({ label: 'Custom…', onClick: async () => { const v = await uiPrompt('Role for this agent:', s.role || ''); if (v !== null) setRole(s, v.trim() || null); } });
+  if (s.role) items.push({ label: 'Clear role', onClick: () => setRole(s, null) });
+  showContextMenu(x, y, items);
+}
+// Route selected text from one agent into another agent's composer (they review + send).
+function routeText(src, target, text) {
+  if (!target || !target.composerInsert || !text) return;
+  target.composerInsert(`\n[from ${roleLabel(src)}]\n${text.trim()}\n`);
+  activate(target.id);
+  if (target.composerText) target.composerText.focus();
+  showToast(`Sent to ${roleLabel(target)} — review and send`);
 }
 
 function activate(id) {
@@ -1835,6 +1878,8 @@ function reorderGroup(draggedGid, targetGid, after) {
 // Right-click menu for an individual tab (grouping actions).
 function tabMenuItems(session) {
   const items = [];
+  // Orchestration: assign an agent role (Coordinator / Research / …).
+  items.push({ label: session.role ? `Role: ${session.role} (change…)` : 'Set role…', onClick: () => { const r = session.tabEl.getBoundingClientRect(); pickRoleMenu(r.left, r.bottom, session); } });
   const g = groupOf(session.id);
   if (g) {
     items.push({ label: `Show group "${g.name}"`, onClick: () => activateGroup(g.id) });
@@ -3130,8 +3175,8 @@ function sessionPayload() {
   const tabs = [];
   const idxOf = new Map();
   for (const s of sessions.values()) {
-    if (s.kind === 'term') { idxOf.set(s.id, tabs.length); tabs.push({ kind: 'term', cwd: s.cwd, ai: s.ai, label: s.label }); }
-    else if (s.kind === 'editor') { idxOf.set(s.id, tabs.length); tabs.push({ kind: 'editor', filePath: s.filePath }); }
+    if (s.kind === 'term') { idxOf.set(s.id, tabs.length); tabs.push({ kind: 'term', cwd: s.cwd, ai: s.ai, label: s.label, role: s.role || null }); }
+    else if (s.kind === 'editor') { idxOf.set(s.id, tabs.length); tabs.push({ kind: 'editor', filePath: s.filePath, role: s.role || null }); }
   }
   const savedGroups = [];
   let activeGroupIdx = -1;
@@ -3161,6 +3206,7 @@ async function restoreSession() {
     try {
       if (t.kind === 'term') id = await openSession(t.cwd, t.label || 'terminal', t.ai);
       else if (t.kind === 'editor') id = await openEditor(t.filePath);
+      if (id && t.role) setRole(sessions.get(id), t.role);
     } catch {}
     restoredIds.push(id);
   }
