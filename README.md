@@ -12,7 +12,7 @@ Open any git repo or Obsidian vault and get **embedded terminals**, a real **cod
 [![Download for Windows](https://img.shields.io/badge/Download-Windows-0078D6?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
 [![Download for Linux](https://img.shields.io/badge/Download-Linux-F0AB00?style=for-the-badge)](https://github.com/WillBe89/gitsidian/releases/latest)
 
-![license: MIT](https://img.shields.io/badge/license-MIT-blue) ![platforms](https://img.shields.io/badge/platforms-macOS_·_Windows_·_Linux-555)
+![license: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm_Noncommercial-blue) ![platforms](https://img.shields.io/badge/platforms-macOS_·_Windows_·_Linux-555)
 
 </div>
 
@@ -200,4 +200,12 @@ Built by **will.be** — [willbe.dev](https://willbe.dev) (with AI assistance).
 
 ## License
 
-[MIT](LICENSE) © will.be
+© will.be. Source-available under the **[PolyForm Noncommercial License 1.0.0](LICENSE)** —
+free to use, modify, and share for **noncommercial** purposes (personal, education,
+research, nonprofit). **Commercial use — including selling, rebranding, or offering
+it as a paid product/service — requires a separate license;** get in touch via
+[willbe.dev](https://willbe.dev).
+
+> Versions **0.7.4 and earlier** were released under the MIT License and remain
+> available under those terms; the PolyForm Noncommercial License applies to later
+> versions.
