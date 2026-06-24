@@ -378,6 +378,9 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   background: var(--bg); border-radius: 4px; padding: 0 4px;
   box-shadow: 0 0 0 1px var(--accent);
 }
+.tab-dragging { opacity: 0.4; }
+.tab.drop-before { box-shadow: inset 3px 0 0 var(--accent); }
+.tab.drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 .tab-ai { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--panel-3); }
 .tab-close { color: var(--muted); font-size: 14px; padding: 0 2px; border-radius: 4px; }
 .tab-close:hover { color: var(--text); background: var(--panel-3); }

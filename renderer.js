@@ -47,6 +47,7 @@ let paneGroupSeq = 0;
 let selectMode = false;     // picking tabs to form a group
 const selectedIds = new Set();
 const groupChipEls = new Map(); // groupId -> chip element
+let tabDragId = null;       // session id being drag-reordered in the strip
 const MAX_GROUP = 4;
 // Where each member sits in the grid, by member count then index (CSS grid-area).
 const GRID_AREAS = {
@@ -1361,12 +1362,59 @@ function attachTab(session, { tag, tagClass = 'tab-ai', tabTitle = '' } = {}) {
     showContextMenu(e.clientX, e.clientY, tabMenuItems(session));
   });
   const titleEl = tab.querySelector('.tab-title');
-  titleEl.title = 'Double-click to rename · Shift-click another tab to group';
+  titleEl.title = 'Double-click to rename · Shift-click another tab to group · drag to reorder';
   titleEl.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename(titleEl, session); });
+  // Drag to reorder tabs in the strip.
+  tab.draggable = true;
+  tab.addEventListener('dragstart', (e) => {
+    if (selectMode || titleEl.classList.contains('editing')) { e.preventDefault(); return; }
+    tabDragId = session.id;
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', 'tab:' + session.id); } catch {}
+    tab.classList.add('tab-dragging');
+  });
+  tab.addEventListener('dragend', () => { tabDragId = null; tab.classList.remove('tab-dragging'); clearTabDropMarks(); });
+  tab.addEventListener('dragover', (e) => {
+    if (!tabDragId || tabDragId === session.id) return;
+    e.preventDefault();
+    const r = tab.getBoundingClientRect();
+    const after = e.clientX > r.left + r.width / 2;
+    clearTabDropMarks();
+    tab.classList.add(after ? 'drop-after' : 'drop-before');
+  });
+  tab.addEventListener('drop', (e) => {
+    if (!tabDragId || tabDragId === session.id) return;
+    e.preventDefault(); e.stopPropagation();
+    const dragged = sessions.get(tabDragId);
+    if (dragged && dragged.tabEl) {
+      const r = tab.getBoundingClientRect();
+      const after = e.clientX > r.left + r.width / 2;
+      tabbar.insertBefore(dragged.tabEl, after ? tab.nextSibling : tab);
+      appendTabControls();      // keep +/group at the end
+      syncSessionsOrder();      // make ⌘1–9 + restore follow the new visual order
+    }
+    clearTabDropMarks();
+    tabDragId = null;
+  });
   session.tabEl = tab;
   tabbar.appendChild(tab);
-  appendTabControls(); // keep "+" and split at the end of the strip
+  appendTabControls(); // keep "+" and group controls at the end of the strip
   return tab;
+}
+
+function clearTabDropMarks() {
+  for (const t of tabbar.querySelectorAll('.drop-before, .drop-after')) t.classList.remove('drop-before', 'drop-after');
+}
+// Rebuild the sessions Map to match the tab strip's visual order.
+function syncSessionsOrder() {
+  const ordered = [...tabbar.querySelectorAll('.tab[data-id]')]
+    .map((t) => t.getAttribute('data-id')).filter((id) => sessions.has(id));
+  const merged = new Map();
+  for (const id of ordered) merged.set(id, sessions.get(id));
+  for (const [id, s] of sessions) if (!merged.has(id)) merged.set(id, s); // safety net
+  sessions.clear();
+  for (const [id, s] of merged) sessions.set(id, s);
+  persistSession();
 }
 
 function shortAi(name) {
