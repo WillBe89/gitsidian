@@ -68,6 +68,22 @@ function appendTabControls() {
 
 const groupOf = (id) => groups.find((g) => g.members.includes(id)) || null;
 
+// Drop a dragged tab onto empty strip space → remove it from its group (and send
+// it to the end). Tab/chip drops stopPropagation, so this only fires on blank area.
+tabbar.addEventListener('dragover', (e) => { if (tabDragId) e.preventDefault(); });
+tabbar.addEventListener('drop', (e) => {
+  if (!tabDragId) return;
+  if (e.target.closest && e.target.closest('.tab, .group-chip')) return;
+  e.preventDefault();
+  const id = tabDragId; tabDragId = null; clearTabDropMarks();
+  const s = sessions.get(id); if (!s) return;
+  const wasGrouped = !!groupOf(id);
+  if (wasGrouped) removeFromGroup(id);
+  if (s.tabEl) { tabbar.appendChild(s.tabEl); appendTabControls(); }
+  syncSessionsOrder();
+  if (wasGrouped) showToast('Removed from group');
+});
+
 // Lightweight non-blocking toast for occasional notices (e.g. session cap).
 let toastTimer = null;
 function showToast(msg) {
@@ -283,6 +299,7 @@ function loadSettings() {
     scrollback: typeof s.scrollback === 'number' ? s.scrollback : 5000,
     bold: !!s.bold,
     italic: !!s.italic,
+    hideTabLabels: !!s.hideTabLabels, // compact tabs (status dot + type tag only)
     defaultAi: s.defaultAi || null,
     autoUpdate: s.autoUpdate !== false, // opt-out; checks on launch by default
     restoreTabs: s.restoreTabs !== false, // opt-out; reopen tabs on relaunch
@@ -341,6 +358,9 @@ function applyTheme() {
 function applySidebarWidth() {
   document.documentElement.style.setProperty('--sidebar-w', settings.sidebarWidth + 'px');
 }
+function applyTabLabels() {
+  document.body.classList.toggle('tabs-compact', settings.hideTabLabels);
+}
 // Refit the visible terminal(s) — used after a resize drag.
 function refitTerminals() {
   const g = activeGroupId ? groups.find((x) => x.id === activeGroupId) : null;
@@ -350,6 +370,7 @@ function refitTerminals() {
 applyAccent();
 applyTheme();
 applySidebarWidth();
+applyTabLabels();
 
 // ---------------------------------------------------------------------------
 // AI picker
@@ -1374,27 +1395,28 @@ function attachTab(session, { tag, tagClass = 'tab-ai', tabTitle = '' } = {}) {
     tab.classList.add('tab-dragging');
   });
   tab.addEventListener('dragend', () => { tabDragId = null; tab.classList.remove('tab-dragging'); clearTabDropMarks(); });
+  // Left/right edge → reorder; centre → group the two together.
+  const dropZone = (e, r) => { const x = e.clientX - r.left; return x < r.width * 0.32 ? 'before' : x > r.width * 0.68 ? 'after' : 'group'; };
   tab.addEventListener('dragover', (e) => {
     if (!tabDragId || tabDragId === session.id) return;
     e.preventDefault();
-    const r = tab.getBoundingClientRect();
-    const after = e.clientX > r.left + r.width / 2;
+    const z = dropZone(e, tab.getBoundingClientRect());
     clearTabDropMarks();
-    tab.classList.add(after ? 'drop-after' : 'drop-before');
+    tab.classList.add(z === 'group' ? 'drop-group' : z === 'after' ? 'drop-after' : 'drop-before');
   });
   tab.addEventListener('drop', (e) => {
     if (!tabDragId || tabDragId === session.id) return;
     e.preventDefault(); e.stopPropagation();
-    const dragged = sessions.get(tabDragId);
-    if (dragged && dragged.tabEl) {
-      const r = tab.getBoundingClientRect();
-      const after = e.clientX > r.left + r.width / 2;
-      tabbar.insertBefore(dragged.tabEl, after ? tab.nextSibling : tab);
-      appendTabControls();      // keep +/group at the end
-      syncSessionsOrder();      // make ⌘1–9 + restore follow the new visual order
-    }
+    const draggedId = tabDragId; tabDragId = null;
+    const z = dropZone(e, tab.getBoundingClientRect());
     clearTabDropMarks();
-    tabDragId = null;
+    if (z === 'group') { groupDragWith(draggedId, session.id); return; }
+    const dragged = sessions.get(draggedId);
+    if (dragged && dragged.tabEl) {
+      tabbar.insertBefore(dragged.tabEl, z === 'after' ? tab.nextSibling : tab);
+      appendTabControls();   // keep +/group at the end
+      syncSessionsOrder();   // make ⌘1–9 + restore follow the new visual order
+    }
   });
   session.tabEl = tab;
   tabbar.appendChild(tab);
@@ -1403,7 +1425,9 @@ function attachTab(session, { tag, tagClass = 'tab-ai', tabTitle = '' } = {}) {
 }
 
 function clearTabDropMarks() {
-  for (const t of tabbar.querySelectorAll('.drop-before, .drop-after')) t.classList.remove('drop-before', 'drop-after');
+  for (const t of tabbar.querySelectorAll('.drop-before, .drop-after, .drop-group, .chip-drop')) {
+    t.classList.remove('drop-before', 'drop-after', 'drop-group', 'chip-drop');
+  }
 }
 // Rebuild the sessions Map to match the tab strip's visual order.
 function syncSessionsOrder() {
@@ -1657,6 +1681,35 @@ function removeFromGroup(id) {
   else { if (activeGroupId === g.id && activeId === id) activeId = g.members[0]; applyLayout(); }
   persistSession();
 }
+// Quietly remove a group that dropped below 2 members (no re-activation).
+function cleanupEmptyGroup(g) {
+  if (!g || g.members.filter((m) => sessions.has(m)).length >= 2) return;
+  groups = groups.filter((x) => x.id !== g.id);
+  const chip = groupChipEls.get(g.id); if (chip) { chip.remove(); groupChipEls.delete(g.id); }
+  if (activeGroupId === g.id) activeGroupId = null;
+}
+// Add a tab to an existing group (drag-to-group / drop-on-chip).
+function addToGroup(draggedId, g) {
+  if (!g || !sessions.has(draggedId)) return;
+  const dg = groupOf(draggedId);
+  if (dg && dg.id === g.id) { activateGroup(g.id); return; }
+  if (g.members.filter((m) => sessions.has(m)).length >= MAX_GROUP) { showToast(`A group holds up to ${MAX_GROUP} tabs.`); return; }
+  if (dg) dg.members = dg.members.filter((m) => m !== draggedId);
+  g.members.push(draggedId);
+  cleanupEmptyGroup(dg);
+  activateGroup(g.id);
+  persistSession();
+}
+// Drop one tab onto another's centre → group them (join target's group or make a new pair).
+function groupDragWith(draggedId, targetId) {
+  if (draggedId === targetId || !sessions.has(targetId)) return;
+  const tg = groupOf(targetId);
+  if (tg) { addToGroup(draggedId, tg); return; }
+  const dg = groupOf(draggedId);
+  if (dg) dg.members = dg.members.filter((m) => m !== draggedId);
+  cleanupEmptyGroup(dg);
+  createGroup([targetId, draggedId], `Group ${groups.length + 1}`);
+}
 async function renameGroup(gid) {
   const g = groups.find((x) => x.id === gid); if (!g) return;
   const name = await uiPrompt('Rename group:', g.name);
@@ -1680,14 +1733,25 @@ function renderGroupChips() {
         el('span', { class: 'group-chip-count' }),
         el('span', { class: 'group-chip-dot' }),
         el('span', { class: 'tab-close group-chip-close', text: '×', title: 'Ungroup (keeps the tabs)' }));
+      const toggleExpand = () => { g.expanded = !g.expanded; updateTabActive(); renderGroupChips(); };
       chip.addEventListener('click', (e) => {
         if (e.target.classList.contains('group-chip-close')) { ungroup(g.id); return; }
-        if (e.target.classList.contains('group-chip-caret')) { // toggle showing member tabs
-          e.stopPropagation(); g.expanded = !g.expanded; updateTabActive(); renderGroupChips(); return;
-        }
-        activateGroup(g.id);
+        if (e.target.classList.contains('group-chip-caret')) { e.stopPropagation(); toggleExpand(); return; }
+        // First click opens the group's grid; clicking the active group's chip
+        // again toggles its member tabs in the strip (collapse/expand).
+        if (activeGroupId === g.id) toggleExpand();
+        else activateGroup(g.id);
       });
       chip.addEventListener('dblclick', (e) => { e.stopPropagation(); renameGroup(g.id); });
+      // Drag a tab onto a group chip → add it to that group.
+      chip.addEventListener('dragover', (e) => { if (tabDragId && !g.members.includes(tabDragId)) { e.preventDefault(); clearTabDropMarks(); chip.classList.add('chip-drop'); } });
+      chip.addEventListener('dragleave', () => chip.classList.remove('chip-drop'));
+      chip.addEventListener('drop', (e) => {
+        if (!tabDragId) return;
+        e.preventDefault(); e.stopPropagation();
+        const id = tabDragId; tabDragId = null; clearTabDropMarks();
+        addToGroup(id, g);
+      });
       chip.addEventListener('contextmenu', (e) => {
         e.preventDefault(); e.stopPropagation();
         showContextMenu(e.clientX, e.clientY, [
@@ -3928,6 +3992,8 @@ document.getElementById('open-settings').addEventListener('click', () => {
   const italic = document.getElementById('settings-italic');
   italic.checked = settings.italic;
   italic.onchange = () => { settings.italic = italic.checked; saveSettings(); applyFontStyle(); };
+  const compactTabs = document.getElementById('settings-compact-tabs');
+  if (compactTabs) { compactTabs.checked = settings.hideTabLabels; compactTabs.onchange = () => { settings.hideTabLabels = compactTabs.checked; saveSettings(); applyTabLabels(); }; }
   const sb = document.getElementById('settings-scrollback');
   sb.value = String(settings.scrollback);
   sb.onchange = () => { settings.scrollback = parseInt(sb.value, 10); saveSettings(); }; // applies to new terminals
