@@ -793,7 +793,7 @@ function projectCard(p) {
 function groupEl(g) {
   const wrap = el('div', { class: `group${g.collapsed ? '' : ' open'}` });
   const nameEl = el('span', { class: 'group-name', text: g.name, title: 'Double-click to rename' });
-  nameEl.addEventListener('dblclick', (e) => { e.stopPropagation(); renameGroup(nameEl, g); });
+  nameEl.addEventListener('dblclick', (e) => { e.stopPropagation(); renameProjectGroup(nameEl, g); });
   const del = el('span', { class: 'group-del', title: 'Delete group (projects move out)', text: '×' });
   del.addEventListener('click', (e) => { e.stopPropagation(); deleteGroup(g.id); });
 
@@ -804,6 +804,14 @@ function groupEl(g) {
     del
   );
   header.addEventListener('click', () => { g.collapsed = !g.collapsed; saveLayout(); wrap.classList.toggle('open'); });
+  // Right-click the group header → rename / delete (matches double-click-to-rename).
+  header.addEventListener('contextmenu', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    showContextMenu(e.clientX, e.clientY, [
+      { label: 'Rename group…', onClick: () => renameProjectGroup(nameEl, g) },
+      { label: 'Delete group', onClick: () => deleteGroup(g.id) },
+    ]);
+  });
 
   // Drag the header to reorder groups; dropping a project here adds it here.
   header.addEventListener('dragstart', (e) => {
@@ -850,7 +858,7 @@ function groupEl(g) {
   return wrap;
 }
 
-function renameGroup(nameEl, g) {
+function renameProjectGroup(nameEl, g) {
   nameEl.contentEditable = 'true';
   nameEl.classList.add('editing');
   nameEl.focus();

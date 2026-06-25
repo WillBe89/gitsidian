@@ -2,6 +2,13 @@
 
 All notable changes to Gitsidian.
 
+## 0.8.1 — 2026-06-25
+
+- **Fix:** renaming a **project group** in the sidebar (double-click its name) did
+  nothing and stayed on "New group" — an internal function-name collision routed the
+  click to the wrong handler. Renaming works again, and group headers now also have a
+  **right-click menu** (Rename / Delete).
+
 ## 0.8.0 — 2026-06-25
 
 **The final free release.** Development continues in **Mephisto**, the commercial
