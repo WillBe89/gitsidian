@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="mephisto-logo.png" width="260" alt="Gitsidian — Mephisto" />
+<img src="gitsidian3.png" width="190" alt="Gitsidian" />
 
 # Gitsidian
 
@@ -186,6 +186,24 @@ code signing & notarization, real-time team chat, and more — now lives in **Me
 the commercial successor. **[ROADMAP.md](ROADMAP.md)** records what shipped here and
 the direction the paid build takes it. This repo continues to receive **critical bug
 and security fixes**.
+
+---
+
+<div align="center">
+
+<img src="mephisto-logo.png" width="240" alt="Mephisto" />
+
+### Development continues in **Mephisto**
+
+The brain behind your agents. Gitsidian grew up into a full **AI agent orchestrator** —
+you assemble a council of specialist agents and **Mephisto**, the overseer, coordinates
+them. It lives in a **separate, private repository** as the commercial successor.
+
+Interested in early access or a commercial license? Reach out via **[willbe.dev](https://willbe.dev)**.
+
+</div>
+
+---
 
 ## Support
 
